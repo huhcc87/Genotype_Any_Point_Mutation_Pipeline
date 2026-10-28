@@ -1,0 +1,3 @@
+name,seq,mutation
+TTN_HMERF,examples/ttn_exon344_HMERF.fasta,C101T
+TTN_TMD,examples/ttn_exon364_TMD.fasta,A101G

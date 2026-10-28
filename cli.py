@@ -26,7 +26,6 @@ def analyze(seq, mutation, name, max_enzymes):
     click.echo("  Genotype Pipeline - PCR-RFLP Design")
     click.echo("=" * 60)
 
-    # 1. Load sequence
     try:
         sequence = load_sequence(seq)
         click.echo(f"\n[1] Sequence loaded: {len(sequence)} bp")
@@ -34,7 +33,6 @@ def analyze(seq, mutation, name, max_enzymes):
         click.echo(f"Error loading sequence: {e}")
         return
 
-    # 2. Parse mutation
     try:
         pos, ref, alt = parse_mutation(mutation)
         click.echo(f"[2] Mutation parsed: position {pos+1} ({ref}>{alt})")
@@ -42,7 +40,6 @@ def analyze(seq, mutation, name, max_enzymes):
         click.echo(f"Error parsing mutation: {e}")
         return
 
-    # 3. Apply mutation
     try:
         wt_seq, mut_seq = apply_mutation(sequence, pos, ref, alt)
         click.echo("[3] Wild-type and mutant sequences created")
@@ -54,7 +51,6 @@ def analyze(seq, mutation, name, max_enzymes):
         click.echo(f"Error applying mutation: {e}")
         return
 
-    # 4. Find enzymes
     click.echo("\n[4] Searching for differential restriction enzymes...")
     enzymes = find_differential_enzymes(wt_seq, mut_seq, max_results=max_enzymes)
     if enzymes:
@@ -64,7 +60,6 @@ def analyze(seq, mutation, name, max_enzymes):
     else:
         click.echo("  No differential enzymes found.")
 
-    # 5. Design primers
     click.echo("\n[5] Designing primers...")
     primers = design_primers(sequence, pos)
     if not primers:
@@ -78,7 +73,6 @@ def analyze(seq, mutation, name, max_enzymes):
             click.echo(f"    Reverse : {p['reverse']} (Tm={p['reverse_tm']}°C)")
             click.echo(f"    Product : {p['product_size']} bp")
 
-    # 6. Virtual gel
     gel_path = None
     if enzymes and primers:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -97,7 +91,6 @@ def analyze(seq, mutation, name, max_enzymes):
         except Exception as e:
             click.echo(f"  Could not generate gel: {e}")
 
-    # 7. Report
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_name = name.replace(" ", "_")
     report_file = Path("output") / f"{safe_name}_{timestamp}_report.md"
@@ -125,5 +118,38 @@ def analyze(seq, mutation, name, max_enzymes):
     click.echo("=" * 60)
 
 
+@click.command()
+@click.option("--csv", required=True, help="CSV file with columns: name,seq,mutation")
+def batch(csv):
+    """Process multiple mutations from a CSV file."""
+    import csv as csv_module
+    click.echo(f"Running batch mode from: {csv}\n")
+    
+    with open(csv, newline="") as f:
+        reader = csv_module.DictReader(f)
+        for row in reader:
+            name = row.get("name", "Variant")
+            seq = row.get("seq", "")
+            mutation = row.get("mutation", "")
+            if not seq or not mutation:
+                click.echo(f"Skipping incomplete row: {row}")
+                continue
+            click.echo(f"\n{'='*60}")
+            click.echo(f"Processing: {name}")
+            click.echo(f"{'='*60}")
+            from click.testing import CliRunner
+            runner = CliRunner()
+            result = runner.invoke(analyze, [
+                "--seq", seq,
+                "--mutation", mutation,
+                "--name", name
+            ])
+            click.echo(result.output)
+
+
+cli = click.Group()
+cli.add_command(analyze)
+cli.add_command(batch)
+
 if __name__ == "__main__":
-    analyze()
+    cli()
