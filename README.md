@@ -17,22 +17,7 @@ Designed to be reusable for any gene / any point mutation.
 - Python 3.9 or higher
 - Git
 
-**Python packages** (installed automatically):
-- biopython
-- primer3-py
-- click
-- pyyaml
-- python-docx
-- matplotlib
-- pandas
-
-## Installation
-
-### macOS / Linux
+**Install all Python packages:**
 
 ```bash
-git clone https://github.com/huhcc87/Genotype_Any_Point_Mutation_Pipeline.git
-cd Genotype_Any_Point_Mutation_Pipeline
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+pip install biopython primer3-py click pyyaml python-docx matplotlib pandas
