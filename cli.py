@@ -87,7 +87,7 @@ def analyze(seq, mutation, name, max_enzymes):
         try:
             gel_path = draw_virtual_gel(
                 product_size=primers[0]["product_size"],
-                enzyme=enzymes[0],
+                enzyme=enzymes[0],["enzyme"],
                 output_path=str(gel_file)
             )
             click.echo(f"\n[6] Virtual gel saved: {gel_path}")
