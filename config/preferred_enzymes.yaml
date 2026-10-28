@@ -1,0 +1,41 @@
+# Preferred restriction enzymes (NEB catalog numbers)
+# Only these will be strongly preferred in ranking
+
+preferred:
+  - name: Hpy188I
+    catalog: R0617S
+    site: TCNGA
+  - name: CviKI-1
+    catalog: R0710S
+    site: RG/CY
+  - name: NlaIV
+    catalog: R0126S
+    site: GGN/NCC
+  - name: FokI
+    catalog: R0109S
+    site: GGATG
+  - name: BpmI
+    catalog: R0565S
+    site: CTGGAG
+  - name: AluI
+    catalog: R0137S
+    site: AGCT
+  - name: HaeIII
+    catalog: R0108S
+    site: GGCC
+  - name: MspI
+    catalog: R0106S
+    site: CCGG
+  - name: HinfI
+    catalog: R0155S
+    site: GANTC
+  - name: RsaI
+    catalog: R0167S
+    site: GTAC
+
+# Scoring weights
+scoring:
+  preferred_bonus: 30
+  single_cut_bonus: 20
+  good_fragment_separation: 15
+  commercial_bonus: 10
