@@ -10,7 +10,7 @@ from datetime import datetime
 
 from src.sequence import load_sequence, parse_mutation, apply_mutation
 from src.restriction import find_differential_enzymes, print_enzyme_table
-from src.primers import design_primers, simple_end_primers, design_mismatch_primers
+from src.primers import design_primers, simple_end_primers, design_mismatch_primers, check_primer_quality
 from src.gel import draw_virtual_gel
 from src.report import generate_markdown_report
 from src.word_report import generate_word_report
@@ -78,6 +78,15 @@ def analyze(seq, mutation, name, max_enzymes):
             click.echo(f"    Reverse : {p['reverse']} (Tm={p['reverse_tm']}°C)")
             click.echo(f"    Product : {p['product_size']} bp")
 
+            fwd_warn = check_primer_quality(p['forward'], p['forward_tm'])
+            rev_warn = check_primer_quality(p['reverse'], p['reverse_tm'])
+            if fwd_warn or rev_warn:
+                click.echo("    Warnings:")
+                for w in fwd_warn:
+                    click.echo(f"      Forward: {w}")
+                for w in rev_warn:
+                    click.echo(f"      Reverse: {w}")
+
     gel_path = None
     if enzymes and primers:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -118,7 +127,6 @@ def analyze(seq, mutation, name, max_enzymes):
     except Exception as e:
         click.echo(f"Could not generate report: {e}")
 
-    # Word report
     word_file = Path("output") / f"{safe_name}_{timestamp}_report.docx"
     try:
         generate_word_report(

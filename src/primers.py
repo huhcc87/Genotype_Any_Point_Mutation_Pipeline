@@ -168,3 +168,14 @@ def design_mismatch_primers(sequence: str, pos: int, alt: str, length=22):
         "type": "mismatch",
         "note": "Single mismatch introduced near mutation"
     }]
+def check_primer_quality(primer: str, tm: float) -> list:
+    """Return a list of quality warnings for a primer."""
+    warnings = []
+    gc = (primer.count("G") + primer.count("C")) / len(primer) * 100
+    if gc < 40 or gc > 60:
+        warnings.append(f"GC content {gc:.1f}% (ideal 40-60%)")
+    if tm < 55 or tm > 65:
+        warnings.append(f"Tm {tm}°C (ideal 55-65°C)")
+    if primer.count("N") > 0:
+        warnings.append("Contains ambiguous bases")
+    return warnings
