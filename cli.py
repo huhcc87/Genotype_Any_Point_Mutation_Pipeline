@@ -14,6 +14,7 @@ from src.primers import design_primers, simple_end_primers, design_mismatch_prim
 from src.gel import draw_virtual_gel
 from src.report import generate_markdown_report
 from src.word_report import generate_word_report
+from src.html_report import generate_html_report
 
 
 @click.command()
@@ -107,6 +108,8 @@ def analyze(seq, mutation, name, max_enzymes):
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_name = name.replace(" ", "_")
+
+    # Markdown report
     report_file = Path("output") / f"{safe_name}_{timestamp}_report.md"
     try:
         generate_markdown_report(
@@ -127,6 +130,7 @@ def analyze(seq, mutation, name, max_enzymes):
     except Exception as e:
         click.echo(f"Could not generate report: {e}")
 
+    # Word report
     word_file = Path("output") / f"{safe_name}_{timestamp}_report.docx"
     try:
         generate_word_report(
@@ -146,6 +150,27 @@ def analyze(seq, mutation, name, max_enzymes):
         click.echo(f"[8] Word report saved: {word_file}")
     except Exception as e:
         click.echo(f"Could not generate Word report: {e}")
+
+    # HTML report
+    html_file = Path("output") / f"{safe_name}_{timestamp}_report.html"
+    try:
+        generate_html_report(
+            name=name,
+            mutation_info={
+                "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "position": pos + 1,
+                "ref": ref,
+                "alt": alt,
+                "seq_length": len(sequence),
+            },
+            enzymes=enzymes,
+            primers=primers,
+            gel_path=str(gel_path) if gel_path else None,
+            output_path=str(html_file),
+        )
+        click.echo(f"[9] HTML report saved: {html_file}")
+    except Exception as e:
+        click.echo(f"Could not generate HTML report: {e}")
 
     click.echo("\n" + "=" * 60)
     click.echo("  Analysis complete")
