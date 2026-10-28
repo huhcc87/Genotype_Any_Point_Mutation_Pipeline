@@ -85,9 +85,12 @@ def analyze(seq, mutation, name, max_enzymes):
         safe_name = name.replace(" ", "_")
         gel_file = Path("output") / f"{safe_name}_{timestamp}_gel.png"
         try:
+            best = enzymes[0]
             gel_path = draw_virtual_gel(
-                product_size=primers[0]["product_size"],
-                enzyme=enzymes[0],["enzyme"],
+                amplicon_size=primers[0]["product_size"],
+                cuts_wt=best.get("cuts_wt", []),
+                cuts_mut=best.get("cuts_mut", []),
+                enzyme_name=best["enzyme"],
                 output_path=str(gel_file)
             )
             click.echo(f"\n[6] Virtual gel saved: {gel_path}")
