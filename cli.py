@@ -10,7 +10,7 @@ from datetime import datetime
 
 from src.sequence import load_sequence, parse_mutation, apply_mutation
 from src.restriction import find_differential_enzymes, print_enzyme_table
-from src.primers import design_primers, simple_end_primers
+from src.primers import design_primers, simple_end_primers, design_mismatch_primers
 from src.gel import draw_virtual_gel
 from src.report import generate_markdown_report
 
@@ -63,12 +63,16 @@ def analyze(seq, mutation, name, max_enzymes):
     click.echo("\n[5] Designing primers...")
     primers = design_primers(sequence, pos)
     if not primers:
-        click.echo("  Primer3 found no pairs — using simple end primers...")
+        click.echo("  Primer3 found no pairs — trying mismatch primers...")
+        primers = design_mismatch_primers(sequence, pos, alt)
+    if not primers:
+        click.echo("  Using simple end primers...")
         primers = simple_end_primers(sequence)
 
     if primers:
         for p in primers[:3]:
-            click.echo(f"\n  Pair {p['pair']}:")
+            ptype = p.get("type", "natural")
+            click.echo(f"\n  Pair {p['pair']} ({ptype}):")
             click.echo(f"    Forward : {p['forward']} (Tm={p['forward_tm']}°C)")
             click.echo(f"    Reverse : {p['reverse']} (Tm={p['reverse_tm']}°C)")
             click.echo(f"    Product : {p['product_size']} bp")

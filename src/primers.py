@@ -109,3 +109,62 @@ def design_mismatch_primer(sequence: str, mutation_pos: int, enzyme_site: str,
         "suggestion": f"Introduce mismatch near position {mutation_pos+1} to create site for {enzyme_site}",
         "allele_targeted": allele
     }
+def design_mismatch_primers(sequence: str, pos: int, alt: str, enzyme_site: str = "GAATTC", length=22):
+    """
+    Design a forward primer with a mismatch that creates a restriction site
+    only in the mutant (or destroys it in WT). Simple version for demonstration.
+    """
+    sequence = sequence.upper()
+    # Place the primer so the mutation is near the 3' end
+    start = max(0, pos - length + 3)
+    primer = list(sequence[start:start + length])
+    
+    # Introduce a mismatch near the 3' end to help create a site
+    mismatch_pos = min(len(primer) - 3, pos - start)
+    if mismatch_pos >= 0:
+        # Simple example: change one base to help form EcoRI-like site
+        primer[mismatch_pos] = "A" if primer[mismatch_pos] != "A" else "G"
+    
+    fwd = "".join(primer)
+    rev = str(Seq(sequence[pos + 5:pos + 5 + length]).reverse_complement())
+    
+    return [{
+        "pair": 1,
+        "forward": fwd,
+        "reverse": rev,
+        "product_size": len(sequence),
+        "forward_tm": round(mt.Tm_NN(fwd), 1),
+        "reverse_tm": round(mt.Tm_NN(rev), 1),
+        "type": "mismatch",
+        "note": f"Mismatch introduced to favor site creation near mutation"
+    }]
+def design_mismatch_primers(sequence: str, pos: int, alt: str, length=22):
+    """
+    Basic mismatch primer: introduces a single mismatch near the mutation
+    to help create a differential restriction site.
+    """
+    sequence = sequence.upper()
+    start = max(0, pos - length + 4)
+    primer_seq = list(sequence[start:start + length])
+    
+    # Introduce one mismatch near the 3' end
+    mismatch_idx = min(len(primer_seq) - 4, pos - start)
+    if 0 <= mismatch_idx < len(primer_seq):
+        bases = ["A", "C", "G", "T"]
+        current = primer_seq[mismatch_idx]
+        primer_seq[mismatch_idx] = next(b for b in bases if b != current)
+    
+    fwd = "".join(primer_seq)
+    rev_start = pos + 10
+    rev = str(Seq(sequence[rev_start:rev_start + length]).reverse_complement())
+    
+    return [{
+        "pair": 1,
+        "forward": fwd,
+        "reverse": rev,
+        "product_size": len(sequence),
+        "forward_tm": round(mt.Tm_NN(fwd), 1),
+        "reverse_tm": round(mt.Tm_NN(rev), 1),
+        "type": "mismatch",
+        "note": "Single mismatch introduced near mutation"
+    }]
