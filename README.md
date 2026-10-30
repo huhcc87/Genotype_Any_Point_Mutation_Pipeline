@@ -1,47 +1,42 @@
-# Genotype Pipeline
+# Genotype — PCR-RFLP assay designer
 
-Reusable local tool for designing PCR-RFLP assays for any DNA sequence + point mutation.
+Interactive, research-use, in-silico assay design for a single-base substitution in a supplied DNA sequence.
 
-Given a sequence and a mutation, it automatically:
-- Finds commercial restriction enzymes that cut differently in wild-type vs mutant
-- Designs flanking primers (Primer3 + mismatch fallback)
-- Predicts fragment sizes
-- Generates a virtual gel image
-- Writes Markdown, Word (.docx), and HTML reports
-- Supports batch processing of multiple mutations
+## Features
+- Strict single-record FASTA and reference-allele validation
+- Primer3 flanking primer design, with clearly labelled provisional fallback
+- Differential restriction enzyme screening of the actual PCR amplicon
+- Wild-type, heterozygote, and mutant fragment predictions
+- Corrected illustrative virtual gel
+- Streamlit web app with FASTA upload, interactive tables, PNG, JSON/CSV/ZIP downloads
+- CLI single-variant and batch CSV workflow
+- Automated unit tests and GitHub Actions CI
 
-Designed to be reusable for any gene / any point mutation.
+## Install and run locally
 
-## Requirements
+Requires Python 3.10–3.12 (recommended).
 
-- Python 3.9 or higher
-- Git
+~~~bash
+cd /Volumes/Extreme_SSD/Genotype_Pipeline
+source venv/bin/activate
+python -m pip install -r requirements.txt
+streamlit run app.py
+~~~
 
-**Install all Python packages:**
+This local path is on the user's Mac; updated files must first be checked out from the feature branch.
 
-```bash
-pip install biopython primer3-py click pyyaml python-docx matplotlib pandas
+## CLI
 
-## TTN Examples
+~~~bash
+python cli.py analyze --seq examples/ttn_exon344_HMERF.fasta --mutation C101T --name TTN_HMERF
+python cli.py batch --csv examples/batch_example.csv
+python -m pytest -q
+~~~
 
-### 1. HMERF (c.92185C>T, p.Cys30729Tyr)
+## Coordinate and clinical safety notes
 
-**Primers (Pair 1):**
-- Forward: `AGGAAAAGTAGTTGGGCCAA` (Tm=56.9°C)
-- Reverse: `GTGTAACTTTGGGCTTCACA` (Tm=56.2°C)
-- Product: 180 bp
+Variant notation `C101T` or `101C>T` means the **101st position within the supplied sequence**. A prefix such as `c.` does not implement HGVS reference transcript mapping; input must be mapped to the FASTA explicitly. A reference-base mismatch produces an error.
 
-**Virtual Gel:**
+A `DESIGN_CANDIDATE` means only an in-silico differential-digest candidate. This software **does not** confirm genome-wide primer uniqueness, amplification, reaction conditions, methylation-sensitive enzyme behavior, experimental genotyping, full HGVS mapping, external restriction-enzyme availability, or validated dCAPS primers. The mismatch-primer fallback is deliberately disabled pending rigorous allele-level implementation. Small restriction fragments may be poorly resolved in agarose gels.
 
-![TTN HMERF Gel](docs/TTN_HMERF_gel.png)
-
-### 2. TMD / Udd Myopathy (c.107884A>G, p.Glu35962Lys)
-
-**Primers (Pair 1):**
-- Forward: `TCCTCCATGCAAGAGTCCTT` (Tm=58.3°C)
-- Reverse: `ACTTTGCCTTCATCAATGCT` (Tm=55.9°C)
-- Product: 170 bp
-
-**Virtual Gel:**
-
-![TTN TMD Gel](docs/TTN_TMD_gel.png)
+The old Markdown/Word/HTML report modules remain in the repo for backward compatibility, but this feature branch CLI saves JSON and a PNG gel; the Streamlit app exports ZIP/CSV/JSON/PNG. Fuller PDF/Word reporting is a later task.
