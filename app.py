@@ -10,7 +10,7 @@ from src.document_input import extract_sequences
 from src.sequence import load_sequence
 from src.reference_mapping import map_genomic_snv
 from src.variant_input import parse_marked_reference, compare_wild_type_mutant
-from src.gene_lookup import search_gene, get_cds, codon_table, alternative_codons, fetch_genomic_assay
+from src.gene_lookup import search_gene, get_transcript_details, get_cds, codon_table, alternative_codons, fetch_genomic_assay
 from src.ranking import rank_enzymes
 from src.ladders import LADDERS,ladder_notes
 from src.visualization import render_ladder_gel,render_sequence_figure,sequence_markup
@@ -81,19 +81,25 @@ if mode=="Search gene / transcript / exon / codon":
         except ValueError as exc:
             st.error(str(exc))
     found=st.session_state.get("lookup_gene")
+    if found and found.get("query","").upper()!=identifier.strip().upper():
+        found=None
+        st.session_state.pop("lookup_gene",None)
+        st.session_state.pop("lookup_cds",None)
+        st.session_state.pop("lookup_assay",None)
     if found:
         st.success(f"{found['gene_symbol']} | {found['gene_id']} | {found['assembly']}")
         txs=found["transcripts"]
         tx_index=st.selectbox("Choose protein-coding transcript",list(range(len(txs))),
-            format_func=lambda i: f"{txs[i]['id']}.{txs[i]['version'] or '?'} | {txs[i]['label']} | {txs[i]['exon_count']} exons | {txs[i]['coding_length_aa']} aa" + (" | canonical" if txs[i]["is_canonical"] else ""),
+            format_func=lambda i: f"{txs[i]['id']}.{txs[i]['version'] or '?'} | {txs[i]['label']} | exon/codon details on selection" + (" | canonical" if txs[i]["is_canonical"] else ""),
             key="lookup_transcript")
         tx=txs[tx_index]
         if st.button("Load CDS and exon/codon map"):
             try:
                 with st.spinner("Mapping coding bases onto genomic exon coordinates..."):
+                    annotation=get_transcript_details(tx["id"],found["gene_id"])
                     cds=get_cds(tx["id"])
-                    rows=codon_table(tx["annotation"],cds)
-                st.session_state["lookup_cds"]={"transcript_id":tx["id"],"cds":cds,"rows":rows}
+                    rows=codon_table(annotation,cds)
+                st.session_state["lookup_cds"]={"transcript_id":tx["id"],"cds":cds,"rows":rows,"annotation":annotation}
                 st.session_state.pop("lookup_assay",None)
             except ValueError as exc:
                 st.error(str(exc))
@@ -117,7 +123,7 @@ if mode=="Search gene / transcript / exon / codon":
             if st.button("Load reference genomic DNA for selected variant"):
                 try:
                     with st.spinner("Retrieving reference flank and checking allele orientation..."):
-                        template=fetch_genomic_assay(tx["annotation"],loaded["cds"],codon_number,alternative["mutant_codon"])
+                        template=fetch_genomic_assay(loaded["annotation"],loaded["cds"],codon_number,alternative["mutant_codon"])
                     st.session_state["lookup_assay"]=template
                 except ValueError as exc:
                     st.error(str(exc))
