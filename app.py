@@ -44,7 +44,7 @@ highlighted DNA sequence and input FASTA. Test in the laboratory before use.
 """)
 with st.sidebar:
     st.header("Assay setup")
-    mode=st.radio("Input source",["Try example","Search gene / transcript / exon / codon","MSH3 E413K example","Upload file","Paste sequence","WT marked motif → mutant motif","Complete WT and mutant sequences"])
+    mode=st.radio("Input source",["Try example","Search gene / transcript / exon / codon","Upload file","Paste sequence","WT marked motif → mutant motif","Complete WT and mutant sequences"])
     name=st.text_input("Assay name","Variant")
     mutation=st.text_input("Mutation (local sequence position)","C101T")
     max_enzymes=st.slider("Maximum restriction enzymes",3,50,20)
@@ -70,7 +70,7 @@ input_error=None
 if mode=="Search gene / transcript / exon / codon":
     st.subheader("Search human gene → transcript → exon → codon")
     st.caption("Ensembl REST, human GRCh38. Internet required. Reference mapping is transcript-specific.")
-    identifier=st.text_input("Human gene symbol or Ensembl gene ID","MSH3")
+    identifier=st.text_input("Human gene symbol or Ensembl gene ID","")
     if st.button("Find gene and transcripts"):
         try:
             with st.spinner("Retrieving gene annotation from Ensembl..."):
@@ -128,20 +128,6 @@ if mode=="Search gene / transcript / exon / codon":
                 variant_metadata={"variant":derived_mutation, "source":"Ensembl gene lookup",**template["metadata"]}
                 st.success(f"Ready: {derived_mutation}, {len(sequence)} bp genomic flank, {template['metadata']['reference_codon']}→{template['metadata']['alternate_codon']}.")
                 st.warning("This creates a reference-based candidate assay, not a genotype call or genome-wide primer specificity validation.")
-elif mode=="MSH3 E413K example":
-    st.subheader("MSH3 exon 8 E413K — marked WT codon demonstration")
-    marked_path=Path(__file__).resolve().parent/"examples"/"MSH3_exon8_E413K_WT_marked.txt"
-    st.caption("Input is the user-provided 322 bp fragment. [GAG]→AAG maps to local G219A; transcript c.1237G>A not independently verified.")
-    if marked_path.is_file():
-        marked_example=marked_path.read_text(encoding="utf-8")
-        st.code(marked_example,language="text")
-        try:
-            sequence, derived_mutation, variant_metadata=parse_marked_reference(marked_example,"AAG")
-            st.success(f"Derived local variant: {derived_mutation}, reference length {len(sequence)} bp.")
-        except ValueError as exc:
-            input_error=str(exc); st.error(input_error)
-    else:
-        st.error("Missing example file.")
 elif mode=="WT marked motif → mutant motif":
     st.subheader("Mark the WT codon and enter its mutant replacement")
     marked_text=st.text_area("Wild-type DNA with exactly one marked region, e.g. AAA[GAG]CTG",height=170,
@@ -216,7 +202,7 @@ if st.session_state.get("input_signature") != current_signature:
 if st.button("Analyze example" if mode=="Try example" else "Analyze sequence",
              type="primary",disabled=sequence is None or input_error is not None):
     try:
-        assay_name=("TTN HMERF example" if name=="Variant" and mode=="Try example" else "MSH3 exon 8 E413K example" if name=="Variant" and mode=="MSH3 E413K example" else name)
+        assay_name=("TTN HMERF example" if name=="Variant" and mode=="Try example" else name)
         with st.spinner("Designing primers and screening enzyme patterns..."):
             metadata = None
             local_mutation = variant_metadata['variant'] if variant_metadata else mutation
