@@ -89,6 +89,9 @@ if mode=="Search gene / transcript / exon / codon":
         st.session_state.pop("lookup_assay",None)
     if found:
         st.success(f"{found['gene_symbol']} | {found['gene_id']} | {found['assembly']}")
+        st.caption("Gene discovery source: "+found.get("reference_provider","Unknown"))
+        if found.get("lookup_warning"):
+            st.warning(found["lookup_warning"])
         txs=found["transcripts"]
         tx_index=st.selectbox("Choose protein-coding transcript",list(range(len(txs))),
             format_func=lambda i: f"{txs[i]['id']}.{txs[i]['version'] or '?'} | {txs[i]['label']} | exon/codon details on selection" + (" | canonical" if txs[i]["is_canonical"] else ""),
