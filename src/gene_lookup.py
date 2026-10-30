@@ -21,6 +21,7 @@ from Bio.Data.CodonTable import TranslationError
 from .sequence import load_sequence
 
 ENSEMBL = "https://rest.ensembl.org"
+HOSTS = {"GRCh38": "https://rest.ensembl.org", "GRCh37": "https://grch37.rest.ensembl.org"}
 SYMBOL_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,39}$")
 GENE_ID_RE = re.compile(r"^ENSG[0-9]{11}$", re.I)
 TX_ID_RE = re.compile(r"^ENST[0-9]{11}$", re.I)
@@ -38,12 +39,14 @@ class _NoRedirect(HTTPRedirectHandler):
 _opener = build_opener(HTTPSHandler(), _NoRedirect())
 
 
-def _get_json(resource, params=None):
+def _get_json(resource, params=None, assembly="GRCh38"):
     """Bounded Ensembl HTTPS request with short retries for transient failures."""
     import time
     if not resource.startswith("/") or "//" in resource or ".." in resource:
         raise ValueError("Invalid Ensembl resource path.")
-    uri = ENSEMBL + resource
+    if assembly not in HOSTS:
+        raise ValueError("Supported reference assemblies are GRCh38 and GRCh37.")
+    uri = HOSTS[assembly] + resource
     if params:
         uri += "?" + urlencode(params)
     request = Request(uri, headers={
@@ -83,7 +86,7 @@ def _get_json(resource, params=None):
     raise ValueError(f"Reference service unavailable: {last_error or 'unknown reason'}")
 
 
-def search_gene(identifier):
+def search_gene(identifier, assembly="GRCh38"):
     """Fast lookup: one gene record plus lightweight coding transcript features.
 
     Do not use expand=1 on a gene: very large genes such as TTN can time out
@@ -96,10 +99,10 @@ def search_gene(identifier):
         endpoint = "/lookup/symbol/homo_sapiens/" + quote(name, safe="")
     else:
         raise ValueError("Enter a human gene symbol or Ensembl ENSG gene ID.")
-    gene = _get_json(endpoint)
+    gene = _get_json(endpoint, assembly=assembly)
     if not isinstance(gene, dict) or gene.get("object_type") != "Gene" or gene.get("species") != "homo_sapiens":
         raise ValueError("Identifier did not resolve to a human gene.")
-    if gene.get("assembly_name") not in (None, "GRCh38"):
+    if gene.get("assembly_name") not in (None, assembly):
         raise ValueError("Expected the GRCh38 human reference.")
     gene_id = str(gene.get("id", ""))
     if not GENE_ID_RE.fullmatch(gene_id):
@@ -107,7 +110,7 @@ def search_gene(identifier):
 
     features = _get_json(
         "/overlap/id/" + quote(gene_id, safe=""),
-        {"feature": "transcript", "biotype": "protein_coding"},
+        {"feature": "transcript", "biotype": "protein_coding"}, assembly=assembly,
     )
     if not isinstance(features, list) or len(features) > MAX_GENE_TRANSCRIPTS:
         raise ValueError("Ensembl transcript response is invalid or exceeds the supported limit.")
@@ -136,7 +139,7 @@ def search_gene(identifier):
             "exon_count": None,
             "strand": t.get("strand"),
             "seq_region_name": t.get("seq_region_name"),
-            "assembly_name": t.get("assembly_name", "GRCh38"),
+            "assembly_name": t.get("assembly_name", assembly),
             # Detail is intentionally loaded only after transcript selection.
             "annotation": None,
         })
@@ -149,28 +152,28 @@ def search_gene(identifier):
     return {
         "gene_id": gene_id,
         "gene_symbol": gene.get("display_name", name),
-        "assembly": "GRCh38",
+        "assembly": assembly,
         "chromosome": gene.get("seq_region_name"),
         "transcripts": transcripts,
         "reference_provider": "Ensembl REST",
-        "reference_url": ENSEMBL + endpoint,
+        "reference_url": HOSTS[assembly] + endpoint,
         "query": name,
     }
 
 
-def get_transcript_details(transcript_id, expected_gene_id=None):
+def get_transcript_details(transcript_id, expected_gene_id=None, assembly="GRCh38"):
     """Expand one ENST only; validate gene membership and coding annotations."""
     tid = str(transcript_id).strip().upper()
     if not TX_ID_RE.fullmatch(tid):
         raise ValueError("Select a valid ENST transcript ID.")
-    transcript = _get_json("/lookup/id/" + quote(tid, safe=""), {"expand": 1})
+    transcript = _get_json("/lookup/id/" + quote(tid, safe=""), {"expand": 1}, assembly=assembly)
     if not isinstance(transcript, dict) or transcript.get("object_type") != "Transcript":
         raise ValueError("Ensembl returned no transcript detail.")
     if transcript.get("id") != tid or transcript.get("biotype") != "protein_coding":
         raise ValueError("The selected transcript is not protein coding.")
     if expected_gene_id and transcript.get("Parent") != expected_gene_id:
         raise ValueError("Selected transcript does not belong to the requested gene.")
-    if transcript.get("assembly_name") not in (None, "GRCh38"):
+    if transcript.get("assembly_name") not in (None, assembly):
         raise ValueError("Transcript does not use GRCh38.")
     if not transcript.get("Translation") or not transcript.get("Exon"):
         raise ValueError("This transcript has no usable CDS translation or exon annotations.")
@@ -179,10 +182,10 @@ def get_transcript_details(transcript_id, expected_gene_id=None):
     return transcript
 
 
-def get_cds(transcript_id):
+def get_cds(transcript_id, assembly="GRCh38"):
     if not TX_ID_RE.fullmatch(str(transcript_id)):
         raise ValueError("Select a valid Ensembl ENST transcript.")
-    response = _get_json("/sequence/id/" + transcript_id, {"type": "cds"})
+    response = _get_json("/sequence/id/" + transcript_id, {"type": "cds"}, assembly=assembly)
     sequence = load_sequence(str(response.get("seq", "")))
     if len(sequence) > MAX_CDS or len(sequence) % 3:
         raise ValueError("The CDS length is unsupported or not divisible by three.")
@@ -273,7 +276,7 @@ def alternative_codons(codon):
     return options
 
 
-def fetch_genomic_assay(transcript, cds, codon_number, mutant_codon, flank_bp=300):
+def fetch_genomic_assay(transcript, cds, codon_number, mutant_codon, flank_bp=300, assembly="GRCh38"):
     """Return a genomic DNA reference flank plus local SNV for current engine.
 
     Ensembl supplies genomic plus strand. Negative-strand transcripts are
@@ -298,7 +301,7 @@ def fetch_genomic_assay(transcript, cds, codon_number, mutant_codon, flank_bp=30
         raise ValueError("Unsupported chromosome identifier for human genomic region lookup.")
     lo, hi = max(1, genomic_pos - flank_bp), genomic_pos + flank_bp
     region = f"{chrom}:{lo}..{hi}:1"
-    resp = _get_json("/sequence/region/human/" + quote(region, safe=":."), {})
+    resp = _get_json("/sequence/region/human/" + quote(region, safe=":."), {}, assembly=assembly)
     plus_sequence = load_sequence(str(resp.get("seq", "")))
     if len(plus_sequence) != hi - lo + 1:
         raise ValueError("Ensembl returned a region of an unexpected length.")
@@ -313,7 +316,7 @@ def fetch_genomic_assay(transcript, cds, codon_number, mutant_codon, flank_bp=30
     aa_after = change["mutant_amino_acid"]
     metadata = {
         "provider": "Ensembl REST; current reference release",
-        "assembly": "GRCh38",
+        "assembly": assembly,
         "gene": transcript.get("gene_symbol", ""),
         "transcript_id": transcript["id"],
         "transcript_version": transcript.get("version"),
@@ -329,7 +332,7 @@ def fetch_genomic_assay(transcript, cds, codon_number, mutant_codon, flank_bp=30
         "genomic_interval": f"{chrom}:{lo}-{hi}",
         "transcript_strand": transcript["strand"],
         "local_mutation": f"{ref}{local_index+1}{alt}",
-        "reference_sequence_source": f"{ENSEMBL}/sequence/region/human/{region}",
+        "reference_sequence_source": f"{HOSTS[assembly]}/sequence/region/human/{region}",
         "mapping_status": "CDS-to-EXON-CHECKED; GENOMIC-BASE-CHECKED",
         "limitation": "A predicted reference-to-mutant change, not a genotype call from an actual sample. Primer off-target specificity and experimental verification are not performed.",
     }
