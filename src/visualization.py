@@ -18,66 +18,64 @@ from .ladders import LADDERS, ladder_notes
 
 
 def render_ladder_gel(amplicon_size, enzyme, ladder_key, output_path):
-    """Plot the DNA ladder and WT/heterozygous/mutant digest lanes."""
+    """Schematic gel with actual fragment-size labels beside each predicted lane."""
     if ladder_key not in LADDERS:
         raise ValueError("Unknown ladder preset.")
     marker = LADDERS[ladder_key]
     profiles = gel_fragment_profiles(amplicon_size, enzyme["cuts_wt"], enzyme["cuts_mut"])
     labels = ["DNA ladder"] + list(profiles)
     lanes = [marker["sizes"]] + list(profiles.values())
-    all_sizes = [s for group in lanes for s in group if s > 0]
-    if not all_sizes:
-        raise ValueError("No DNA fragments to display.")
-    upper = max(500, int(max(all_sizes) * 1.25))
+    sizes = [int(s) for lane in lanes for s in lane if s > 0]
+    if not sizes:
+        raise ValueError("No predicted fragments.")
+    upper = max(400, int(max(sizes) * 1.32))
     lower = 18
+    def y_pos(bp):
+        return .14 + .72 * ((math.log(upper) - math.log(max(bp, lower))) /
+                             (math.log(upper) - math.log(lower)))
 
-    def y_position(size):
-        return 0.1 + 0.78 * (
-            (math.log(upper) - math.log(max(lower, size))) /
-            (math.log(upper) - math.log(lower))
-        )
-
-    fig, ax = plt.subplots(figsize=(11, 6.4))
-    fig.patch.set_facecolor("#f9fbfd")
-    ax.set_facecolor("#152238")
-    ax.set_xlim(0.45, len(labels) + 0.55)
-    ax.set_ylim(1.02, 0.02)
-
-    for i, fragments in enumerate(lanes, 1):
-        ax.add_patch(Rectangle((i - .27, .062), .54, .018, color="#96a9bd"))
-        counts = Counter(s for s in fragments if s >= lower)
-        for size, repeats in counts.items():
-            ax.add_patch(Rectangle(
-                (i - .27, y_position(size) - .006), .54, .012,
-                color=(.25, .92, .66, min(.95, .49 + .13 * repeats)),
-            ))
-
-    ax.set_xticks(range(1, len(labels) + 1), labels, rotation=10, ha="right")
-    ax.tick_params(axis="x", colors="#27394c", length=0, pad=10)
-    ticks = [t for t in [25, 50, 100, 150, 200, 300, 500, 750, 1000, 1500, 2000,
-                         3000, 5000, 10000] if lower <= t <= upper]
-    ax.set_yticks([y_position(t) for t in ticks], [f"{t:,}" for t in ticks])
-    ax.tick_params(axis="y", colors="white", length=0)
+    fig, ax = plt.subplots(figsize=(14.5, 8.8))
+    fig.patch.set_facecolor("#ffffff")
+    ax.set_facecolor("#142238")
+    ax.set_xlim(.18, 6.15)
+    ax.set_ylim(1.04, .025)
+    ax.set_xticks(range(1, 6), labels, rotation=10, ha="right",
+                  color="#1b293c", fontsize=10)
+    ax.tick_params(axis="x", length=0, pad=10)
+    ax.set_yticks([])
     for spine in ax.spines.values():
         spine.set_visible(False)
-    ax.set_title(
-        f"Predicted complete digest: {enzyme['enzyme']} (fragment size, bp)",
-        color="#ffffff", pad=14
-    )
-    description = " | ".join(
-        f"{label}: {', '.join(map(str, sorted(fragments, reverse=True)))} bp"
-        for label, fragments in profiles.items()
-    )
-    fig.text(.10, .078, description, fontsize=8, color="#334155", wrap=True)
-    footnote = f"Ladder: {ladder_key}. " + ladder_notes(
-        ladder_key, [x for group in profiles.values() for x in group]
-    )
-    fig.text(.10, .041, footnote, fontsize=7.5, color="#475569", wrap=True)
-    fig.subplots_adjust(left=.10, right=.98, top=.87, bottom=.29)
 
-    target = Path(output_path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(target, dpi=160, facecolor=fig.get_facecolor())
+    # Distinguish fragments close enough to overlap by placing label strings
+    # in a right-side summary table below the graph, not by altering sizes.
+    for lane_index, lane in enumerate(lanes, 1):
+        ax.add_patch(Rectangle((lane_index-.23, .092), .46, .018,
+                               color="#a2b3c8"))
+        for size,count in Counter(int(x) for x in lane if x>=lower).items():
+            y=y_pos(size)
+            ax.add_patch(Rectangle((lane_index-.24,y-.0048),.48,.0096,
+                                   color=(.24,.94,.66,min(.98,.55+.1*count))))
+            if lane_index == 1:
+                ax.text(.64,y,f"{size:,} bp",color="#f0f7ff",fontsize=8,
+                        va="center",ha="right")
+            else:
+                ax.text(lane_index+.27,y,f"{size:,}",color="#f0f7ff",
+                        fontsize=8,va="center",ha="left")
+    ax.set_title(f"Predicted complete digest: {enzyme['enzyme']}",
+                 color="#ffffff",fontsize=14,pad=14)
+    fig.text(.12,.14,"Sample fragments (bp):  "+"   |   ".join(
+        f"{k}: {', '.join(map(str,sorted(v,reverse=True)))}"
+        for k,v in profiles.items()),fontsize=9,color="#1e293b",wrap=True)
+    fig.text(.12,.105,"Selected marker: "+ladder_key,
+             fontsize=9,color="#334155")
+    fig.text(.12,.073,ladder_notes(ladder_key,[x for v in profiles.values() for x in v]),
+             fontsize=8,color="#475569",wrap=True)
+    fig.text(.12,.04,"Simulation only; shared-size DNA bands co-migrate. "
+             "Real gel migration and intensity are not calibrated.",fontsize=8,color="#64748b")
+    fig.subplots_adjust(left=.08,right=.96,top=.89,bottom=.23)
+    target=Path(output_path)
+    target.parent.mkdir(parents=True,exist_ok=True)
+    fig.savefig(target,dpi=190,facecolor=fig.get_facecolor())
     plt.close(fig)
     return str(target)
 
