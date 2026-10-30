@@ -24,7 +24,7 @@ ENSEMBL = "https://rest.ensembl.org"
 SYMBOL_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,39}$")
 GENE_ID_RE = re.compile(r"^ENSG[0-9]{11}$", re.I)
 TX_ID_RE = re.compile(r"^ENST[0-9]{11}$", re.I)
-CHROM_RE = re.compile(r"^(?:[0-9]{1,2}|X|Y|MT)$", re.I)
+CHROM_RE = re.compile(r"^(?:[0-9]{1,2}|X|Y)$", re.I)
 MAX_RESPONSE = 8 * 1024 * 1024
 MAX_CDS = 150_000
 MAX_GENE_TRANSCRIPTS = 1500
@@ -74,7 +74,7 @@ def search_gene(identifier):
     data = _get_json(endpoint, {"expand": 1})
     if data.get("object_type") != "Gene" or data.get("species") != "homo_sapiens":
         raise ValueError("The requested identifier did not resolve to a human gene.")
-    if data.get("assembly_name") != "GRCh38":
+    if data.get("assembly_name") not in (None, "GRCh38"):
         raise ValueError("This workflow requires GRCh38 reference annotation.")
     txs = data.get("Transcript", [])
     if not isinstance(txs, list) or len(txs) > MAX_GENE_TRANSCRIPTS:
@@ -85,7 +85,7 @@ def search_gene(identifier):
             continue
         if not TX_ID_RE.fullmatch(str(t.get("id", ""))):
             continue
-        if not t.get("Exon"):
+        if not t.get("Exon") or str(t.get("seq_region_name", "")).upper() == "MT":
             continue
         transcripts.append({
             "id": t["id"], "version": t.get("version"), "label": t.get("display_name", t["id"]),
@@ -103,7 +103,7 @@ def search_gene(identifier):
     return {
         "gene_id": data["id"],
         "gene_symbol": data.get("display_name", name),
-        "assembly": "GRCh38",
+        "assembly": "GRCh38 (Ensembl default reference)",
         "chromosome": data.get("seq_region_name"),
         "transcripts": transcripts,
         "reference_provider": "Ensembl REST",
