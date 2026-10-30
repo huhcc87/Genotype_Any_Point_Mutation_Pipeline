@@ -23,6 +23,22 @@ Install and start Streamlit from GitHub using the [single Mac code block](INSTAL
 
 The document uploader accepts up to **10 MB** and looks for DNA sequences at least **60 bp** long. It does not support image-only scanned PDFs, older binary Word `.doc` files, automatic OCR, compressed FASTQ/VCF input, or arbitrary DNA files containing ambiguous IUPAC bases. Verify every extracted base before analysis.
 
+## Alternative input: wild-type and mutant alleles (MSH3 example)
+
+If you already know the **wild-type codon and mutant codon**, you do not need to calculate the nucleotide position manually.
+
+1. Under **Input source**, choose **WT marked motif → mutant motif**.
+2. Paste *only* the reference DNA, marking one codon with square brackets; for example `ACCT[GAG]CTG`. Paste the entire target fragment with flanks, not only the short codon.
+3. Enter the mutant motif `AAG`.
+4. The app checks for exactly **one** nucleotide substitution and calculates the local 1-based variant position.
+5. Click **Analyze sequence**, then inspect primers, restriction patterns, and downloadable reports.
+
+Alternatively select **Complete WT and mutant sequences**, paste both entire sequences of equal length, and the app locates the single difference. It rejects insertions/deletions or multiple substitutions.
+
+The built-in **MSH3 E413K example** reproduces a researcher-supplied 322-bp reference and derives `G219A` locally from `[GAG]→AAG`. It **does not** independently validate the transcript label `c.1237G>A` or protein annotation `p.E413K` against a reference accession. A natural differential restriction site is not guaranteed.
+
+**Do not include email titles, gene descriptions, arrows, or prose in the DNA entry box.** Use the assay-name field for labels.
+
 ## Step 2 — Set the assay and variant
 
 Set an **Assay name**, such as `Gene_Study_Variant`. Enter a substitution, e.g. **C101T** or **101C>T**, where position 101 refers to the **101st base of the selected sequence**. This is *not necessarily* position 101 in a reference transcript or genome. Prefix `c.` is accepted as text notation only and **does not implement HGVS coordinate mapping**. Enter the REF base precisely as it appears in the uploaded sequence. If it is inconsistent, analysis stops with an error.
