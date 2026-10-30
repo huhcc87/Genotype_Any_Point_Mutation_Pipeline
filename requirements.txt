@@ -1,5 +1,5 @@
 biopython>=1.85,<2
-primer3-py>=2.0,<3
+primer3-py>=2,<3
 click>=8,<9
 pyyaml>=6,<7
 python-docx>=1,<2
@@ -7,3 +7,5 @@ matplotlib>=3.7,<4
 pandas>=2,<3
 streamlit>=1.38,<2
 pytest>=8,<10
+pypdf>=5,<7
+reportlab>=4,<5
