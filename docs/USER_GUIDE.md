@@ -23,7 +23,7 @@ Install and start Streamlit from GitHub using the [single Mac code block](INSTAL
 
 The document uploader accepts up to **10 MB** and looks for DNA sequences at least **60 bp** long. It does not support image-only scanned PDFs, older binary Word `.doc` files, automatic OCR, compressed FASTQ/VCF input, or arbitrary DNA files containing ambiguous IUPAC bases. Verify every extracted base before analysis.
 
-## Alternative input: wild-type and mutant alleles (MSH3 example)
+## Alternative input: wild-type and mutant alleles
 
 If you already know the **wild-type codon and mutant codon**, you do not need to calculate the nucleotide position manually.
 
@@ -35,7 +35,7 @@ If you already know the **wild-type codon and mutant codon**, you do not need to
 
 Alternatively select **Complete WT and mutant sequences**, paste both entire sequences of equal length, and the app locates the single difference. It rejects insertions/deletions or multiple substitutions.
 
-The built-in **MSH3 E413K example** reproduces a researcher-supplied 322-bp reference and derives `G219A` locally from `[GAG]→AAG`. It **does not** independently validate the transcript label `c.1237G>A` or protein annotation `p.E413K` against a reference accession. A natural differential restriction site is not guaranteed.
+For a synthetic illustration, use `ACGT[GAG]TTAC` and the mutant motif `AAG`. In a real assay, supply sufficiently long DNA flanks and verify its reference independently.
 
 **Do not include email titles, gene descriptions, arrows, or prose in the DNA entry box.** Use the assay-name field for labels.
 
