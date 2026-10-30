@@ -44,7 +44,7 @@ def test_genomic_allele_and_negative_orientation(monkeypatch):
                 "Exon":[{"start":300,"end":302}]}
     def fake(path, params=None):
         assert path.startswith("/sequence/region/human/")
-        return {"seq":"A"*300+"CTC"+"A"*300}
+        return {"seq":"A"*300+"C"+"A"*300}
     monkeypatch.setattr(g,"_get_json",fake)
     data=g.fetch_genomic_assay(transcript,"GAG",1,"AAG",300)
     assert data["mutation"]=="G301A"
