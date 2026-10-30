@@ -8,6 +8,7 @@ import streamlit.components.v1 as components
 from src.assay import analyze_assay
 from src.document_input import extract_sequences
 from src.sequence import load_sequence
+from src.reference_mapping import map_genomic_snv
 from src.ranking import rank_enzymes
 from src.ladders import LADDERS,ladder_notes
 from src.visualization import render_ladder_gel,render_sequence_figure,sequence_markup
@@ -45,6 +46,17 @@ with st.sidebar:
     name=st.text_input("Assay name","Variant")
     mutation=st.text_input("Mutation (local sequence position)","C101T")
     max_enzymes=st.slider("Maximum restriction enzymes",3,50,20)
+    variant_mode=st.radio("Variant coordinates",["Local fragment (1-based)","Genomic g. in declared interval"])
+    reference_accession=""
+    genomic_start=1
+    genomic_strand="+"
+    genome_assembly="Unspecified"
+    if variant_mode.startswith("Genomic"):
+        reference_accession=st.text_input("Versioned genomic accession","NC_000001.11")
+        genomic_start=st.number_input("Genomic interval start (1-based)",min_value=1,value=1,step=1)
+        genomic_strand=st.selectbox("Submitted sequence strand",["+","-"])
+        genome_assembly=st.text_input("Genome assembly (metadata only)","GRCh38")
+        st.caption("Enter g.123C>T or NC_000001.11:g.123C>T above. The interval and accession are not independently fetched.")
     st.divider()
     st.caption("Accepted: .fa, .fasta, .fna, .txt, .docx, .pdf (10 MB maximum).")
     st.caption("Do not upload identifiable patient data to any publicly hosted application.")
@@ -89,6 +101,7 @@ else:
 current_signature = (
     hashlib.sha256(sequence.encode("ascii")).hexdigest() if sequence else None,
     mutation.strip().upper(),
+    variant_mode, reference_accession, genomic_start, genomic_strand, genome_assembly,
     name,
     max_enzymes,
 )
@@ -102,7 +115,16 @@ if st.button("Analyze example" if mode=="Try example" else "Analyze sequence",
     try:
         assay_name=("TTN HMERF example" if name=="Variant" and mode=="Try example" else name)
         with st.spinner("Designing primers and screening enzyme patterns..."):
-            result=analyze_assay(sequence,mutation,assay_name,max_enzymes)
+            metadata = None
+            local_mutation = mutation
+            if variant_mode.startswith("Genomic"):
+                metadata = map_genomic_snv(sequence, mutation, reference_accession,
+                                           int(genomic_start), genomic_strand, genome_assembly)
+                local_mutation = metadata["local_mutation"]
+            result=analyze_assay(sequence,local_mutation,assay_name,max_enzymes)
+            if metadata:
+                result["reference_mapping"] = metadata
+                result["warnings"].append(metadata["mapping_warning"])
             result["enzymes"]=rank_enzymes(result["enzymes"])
         st.session_state["input_signature"]=current_signature
         st.session_state["result"]=result
@@ -133,6 +155,10 @@ if result:
             st.write(f"Predicted product: {pair['product_size']} bp | "
                      f"Forward Tm: {pair['forward_tm']} °C | Reverse Tm: {pair['reverse_tm']} °C")
             st.dataframe(pd.DataFrame(result["primers"]),hide_index=True,use_container_width=True)
+            st.write("**Primer3 secondary-structure and local binding checks**")
+            if pair.get("quality_metrics"):
+                st.json(pair["quality_metrics"])
+            st.caption("These checks are limited to the submitted DNA sequence, not the entire genome.")
             with tempfile.TemporaryDirectory() as tmp:
                 output=render_sequence_figure(result,str(Path(tmp)/"primer_map.png"))
                 st.image(Path(output).read_bytes(),caption="Primer-binding regions and local mutation coordinate")
