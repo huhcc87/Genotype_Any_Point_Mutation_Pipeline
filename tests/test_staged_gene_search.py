@@ -18,7 +18,7 @@ def test_staged_gene_search_avoids_expanded_gene(monkeypatch):
     assert requests[1][1] == {"feature":"transcript","biotype":"protein_coding"}
 
 def test_transcript_details_are_lazy(monkeypatch):
-    def fake(path,params=None):
+    def fake(path,params=None,assembly="GRCh38"):
         assert path=="/lookup/id/ENST00000591111"
         assert params=={"expand":1}
         return {"object_type":"Transcript","id":"ENST00000591111","Parent":"ENSG00000155657","biotype":"protein_coding","Translation":{"start":1,"end":3},"Exon":[{"start":1,"end":3}],"seq_region_name":"2"}
