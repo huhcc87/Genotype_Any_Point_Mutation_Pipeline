@@ -11,6 +11,7 @@ from src.sequence import load_sequence
 from src.reference_mapping import map_genomic_snv
 from src.variant_input import parse_marked_reference, compare_wild_type_mutant
 from src.gene_lookup import search_gene, get_transcript_details, get_cds, codon_table, alternative_codons, fetch_genomic_assay
+from src.ucsc_reference import search_refseq_gene, get_refseq_cds, fetch_refseq_assay
 from src.ranking import rank_enzymes
 from src.ladders import LADDERS,ladder_notes,recommended_ladders
 from src.visualization import render_ladder_gel,render_sequence_figure,sequence_markup
@@ -71,18 +72,19 @@ if mode=="Search gene / transcript / exon / codon":
     st.subheader("Search human gene → transcript → exon → codon")
     st.caption("Ensembl REST reference lookup. Internet required; no mixing of reference assemblies.")
     lookup_assembly=st.selectbox("Reference assembly",["GRCh38","GRCh37"])
+    lookup_provider=st.selectbox("Annotation source",["UCSC RefSeq Curated (alternative)","Ensembl REST"],help="UCSC uses versioned NM_ RefSeq transcript IDs; Ensembl uses ENST IDs. Both use the selected genome assembly.")
     identifier=st.text_input("Human gene symbol or Ensembl gene ID","")
     if st.button("Find gene and transcripts"):
         try:
             with st.spinner("Retrieving gene annotation from Ensembl..."):
-                found=search_gene(identifier,assembly=lookup_assembly)
+                found=search_refseq_gene(identifier,assembly=lookup_assembly) if lookup_provider.startswith("UCSC") else search_gene(identifier,assembly=lookup_assembly)
             st.session_state["lookup_gene"]=found
             st.session_state.pop("lookup_cds",None)
             st.session_state.pop("lookup_assay",None)
         except ValueError as exc:
             st.error(str(exc))
     found=st.session_state.get("lookup_gene")
-    if found and (found.get("query","").upper()!=identifier.strip().upper() or found.get("assembly")!=lookup_assembly):
+    if found and (found.get("query","").upper()!=identifier.strip().upper() or found.get("assembly")!=lookup_assembly or (lookup_provider.startswith("UCSC") != found.get("reference_provider","").startswith("UCSC"))):
         found=None
         st.session_state.pop("lookup_gene",None)
         st.session_state.pop("lookup_cds",None)
@@ -100,8 +102,8 @@ if mode=="Search gene / transcript / exon / codon":
         if st.button("Load CDS and exon/codon map"):
             try:
                 with st.spinner("Mapping coding bases onto genomic exon coordinates..."):
-                    annotation=get_transcript_details(tx["id"],found["gene_id"],assembly=lookup_assembly)
-                    cds=get_cds(tx["id"],assembly=lookup_assembly)
+                    annotation=tx["annotation"] if lookup_provider.startswith("UCSC") else get_transcript_details(tx["id"],found["gene_id"],assembly=lookup_assembly)
+                    cds=get_refseq_cds(annotation,assembly=lookup_assembly) if lookup_provider.startswith("UCSC") else get_cds(tx["id"],assembly=lookup_assembly)
                     rows=codon_table(annotation,cds)
                 st.session_state["lookup_cds"]={"transcript_id":tx["id"],"cds":cds,"rows":rows,"annotation":annotation}
                 st.session_state.pop("lookup_assay",None)
@@ -127,7 +129,7 @@ if mode=="Search gene / transcript / exon / codon":
             if st.button("Load reference genomic DNA for selected variant"):
                 try:
                     with st.spinner("Retrieving reference flank and checking allele orientation..."):
-                        template=fetch_genomic_assay(loaded["annotation"],loaded["cds"],codon_number,alternative["mutant_codon"],assembly=lookup_assembly)
+                        template=fetch_refseq_assay(loaded["annotation"],loaded["cds"],codon_number,alternative["mutant_codon"],assembly=lookup_assembly) if lookup_provider.startswith("UCSC") else fetch_genomic_assay(loaded["annotation"],loaded["cds"],codon_number,alternative["mutant_codon"],assembly=lookup_assembly)
                     st.session_state["lookup_assay"]=template
                 except ValueError as exc:
                     st.error(str(exc))
