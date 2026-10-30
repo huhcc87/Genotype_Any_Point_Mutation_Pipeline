@@ -2,7 +2,7 @@ from src import gene_lookup as g
 
 def test_staged_gene_search_avoids_expanded_gene(monkeypatch):
     requests=[]
-    def fake(path, params=None):
+    def fake(path, params=None, assembly='GRCh38'):
         requests.append((path,params))
         if path.startswith("/lookup/symbol/"):
             return {"object_type":"Gene","species":"homo_sapiens","assembly_name":"GRCh38","id":"ENSG00000155657","display_name":"TTN","canonical_transcript":"ENST00000591111.2"}
