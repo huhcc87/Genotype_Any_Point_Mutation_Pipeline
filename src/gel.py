@@ -1,89 +1,63 @@
+"""Illustrative PCR-RFLP agarose gel; bands reflect true diploid allele digests."""
+from collections import Counter
+from pathlib import Path
+import math
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from pathlib import Path
+from .restriction import digest_fragments
 
-def draw_virtual_gel(amplicon_size, cuts_wt, cuts_mut, enzyme_name, 
+
+def gel_fragment_profiles(amplicon_size: int, cuts_wt, cuts_mut):
+    wt = digest_fragments(amplicon_size, cuts_wt)
+    mut = digest_fragments(amplicon_size, cuts_mut)
+    return {
+        "WT undigested": [amplicon_size],
+        "WT digested": wt,
+        "Heterozygote": wt + mut,
+        "Mutant digested": mut,
+    }
+
+
+def draw_virtual_gel(amplicon_size, cuts_wt, cuts_mut, enzyme_name,
                      output_path="output/virtual_gel.png", title=None):
-    """
-    Draw a simple virtual agarose gel showing expected bands.
-    """
-    fig, ax = plt.subplots(figsize=(6, 8))
-    
-    # Lanes
-    lanes = ["Ladder", "WT undig", "WT dig", "Het dig", "Mut dig"]
-    lane_x = [1, 2.5, 4, 5.5, 7]
-    
-    # Background
-    ax.set_xlim(0, 8.5)
-    ax.set_ylim(0, max(amplicon_size * 1.2, 300))
-    ax.set_facecolor("#1a1a2e")
-    
-    # Draw gel wells
-    for x in lane_x:
-        ax.add_patch(patches.Rectangle((x-0.3, max(amplicon_size*1.15, 280)), 0.6, 8, 
-                                        facecolor="white", edgecolor="gray"))
-    
-    def draw_band(x, size, intensity=1.0):
-        if size <= 0:
-            return
-        y = size
-        height = max(3, min(12, size / 20))
-        color = (0.2, 0.9, 0.3, intensity)
-        ax.add_patch(patches.Rectangle((x-0.25, y - height/2), 0.5, height,
-                                        facecolor=color, edgecolor="none"))
-    
-    # Ladder (approximate)
-    for s in [50, 100, 150, 200, 250, 300, 400, 500]:
-        if s < max(amplicon_size * 1.2, 300):
-            draw_band(lane_x[0], s, 0.6)
-    
-    # WT undigested
-    draw_band(lane_x[1], amplicon_size)
-    
-    # WT digested
-    if cuts_wt:
-        prev = 0
-        for c in sorted(cuts_wt) + [amplicon_size]:
-            frag = c - prev
-            if frag > 5:
-                draw_band(lane_x[2], frag)
-            prev = c
-    else:
-        draw_band(lane_x[2], amplicon_size)
-    
-    # Heterozygote (both patterns)
-    draw_band(lane_x[3], amplicon_size, 0.7)
-    if cuts_wt:
-        prev = 0
-        for c in sorted(cuts_wt) + [amplicon_size]:
-            frag = c - prev
-            if frag > 5:
-                draw_band(lane_x[3], frag, 0.7)
-            prev = c
-    
-    # Mutant digested
-    if cuts_mut:
-        prev = 0
-        for c in sorted(cuts_mut) + [amplicon_size]:
-            frag = c - prev
-            if frag > 5:
-                draw_band(lane_x[4], frag)
-            prev = c
-    else:
-        draw_band(lane_x[4], amplicon_size)
-    
-    # Labels
-    ax.set_xticks(lane_x)
-    ax.set_xticklabels(lanes, fontsize=9, color="white")
-    ax.set_ylabel("Fragment size (bp)", color="white")
+    profiles = gel_fragment_profiles(amplicon_size, cuts_wt, cuts_mut)
+    ladder = [50, 75, 100, 150, 200, 250, 300, 400, 500, 750, 1000]
+    ladder = [x for x in ladder if x <= max(amplicon_size * 1.3, 300)]
+    labels = ["Ladder"] + list(profiles)
+    ymax = max(1000, amplicon_size * 1.5)
+    bottom = 20
+    def ypos(size):
+        return 0.12 + 0.78 * (math.log(ymax) - math.log(max(size, bottom))) / (math.log(ymax) - math.log(bottom))
+    fig, ax = plt.subplots(figsize=(8, 6))
+    fig.patch.set_facecolor("#142033")
+    ax.set_facecolor("#142033")
+    ax.set_xlim(0.5, len(labels) + 0.5)
+    ax.set_ylim(1.03, 0)
+    ax.set_xticks(range(1, len(labels) + 1))
+    ax.set_xticklabels(labels, rotation=12, ha="right", color="white", fontsize=9)
+    ax.set_yticks([ypos(x) for x in (50, 100, 200, 500, 1000) if x <= ymax])
+    ax.set_yticklabels([str(x) for x in (50, 100, 200, 500, 1000) if x <= ymax], color="white")
+    ax.set_ylabel("Approximate fragment size (bp)", color="white")
     ax.tick_params(colors="white")
-    ax.set_title(title or f"Virtual Gel – {enzyme_name}", color="white", fontsize=12)
-    
-    # Invert y so large fragments are at top
-    ax.invert_yaxis()
-    
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=150, facecolor="#1a1a2e")
-    plt.close()
-    return output_path
+    for spine in ax.spines.values():
+        spine.set_color("#6986a6")
+    for lane, sizes in enumerate([ladder] + list(profiles.values()), start=1):
+        ax.add_patch(patches.Rectangle((lane - 0.28, 0.065), 0.56, 0.02, color="#8292a5"))
+        counts = Counter(sizes)
+        for size, copies in counts.items():
+            # Short (<20 bp) products are not represented.
+            if size < bottom:
+                continue
+            brightness = min(1.0, 0.40 + 0.16 * copies + 0.35 * (size / max(amplicon_size, 1)))
+            ax.add_patch(patches.Rectangle(
+                (lane - 0.27, ypos(size) - 0.006), 0.54, 0.012,
+                color=(0.25, 0.95, 0.65, brightness)))
+    ax.set_title(title or f"Predicted complete digest: {enzyme_name}", color="white")
+    fig.tight_layout()
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=170, facecolor=fig.get_facecolor())
+    plt.close(fig)
+    return str(path)
