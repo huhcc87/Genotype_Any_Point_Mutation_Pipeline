@@ -4,7 +4,7 @@
 
 ## macOS: one code block (recommended, including Apple Silicon Macs)
 
-Open **Terminal**, copy the **entire block**, paste it, and press Return. It creates a fresh dedicated folder under your home directory, downloads the correct GitHub feature branch, installs **Python 3.11** (using Homebrew if it is available and Python is missing), creates an isolated environment, installs every package from `requirements.txt`, runs the automated tests, and starts the local Streamlit app.
+Open **Terminal**, copy the **entire block**, paste it, and press Return. It creates a fresh dedicated folder under your home directory, downloads the default GitHub main branch, installs **Python 3.11** (using Homebrew if it is available and Python is missing), creates an isolated environment, installs every package from `requirements.txt`, runs the automated tests, and starts the local Streamlit app.
 
 **Required initially:** Git, Python 3.11 **or** Homebrew (to install Python 3.11). If both Python 3.11 and Homebrew are absent, install Python 3.11 from [python.org](https://www.python.org/downloads/macos/) and paste the same block again. If Git is missing, install it from [git-scm.com](https://git-scm.com/downloads/mac) or via macOS Command Line Tools.
 
@@ -12,7 +12,7 @@ Open **Terminal**, copy the **entire block**, paste it, and press Return. It cre
 (
   set -eu
   APP_DIR="$HOME/Genotype_Pipeline_App"
-  BRANCH="feature/streamlit-validated-pcr-rflp"
+  BRANCH="main"
   REPO="https://github.com/huhcc87/Genotype_Any_Point_Mutation_Pipeline.git"
 
   if ! command -v git >/dev/null 2>&1; then
@@ -63,7 +63,24 @@ The URL printed by Streamlit (normally `http://localhost:8501`, sometimes `8502`
 
 **You do not need to download these Python packages separately.** `pip install -r requirements.txt` installs them and their necessary transitive dependencies.
 
-## Windows/Linux or existing Mac installation
+## Windows 10/11 — one copy-and-paste PowerShell command
+
+Use **Windows PowerShell** (not Command Prompt). Install [Git for Windows](https://git-scm.com/downloads/win) and [Python 3.11](https://www.python.org/downloads/windows/) including the `py` launcher first. The entire copy-paste command is at the top of the [README](../README.md#start-on-windows-copy-one-code-block-into-powershell).
+
+The Windows command downloads the default `main` branch into `%USERPROFILE%\Genotype_Pipeline_App`, avoids overwriting dirty worktrees, and invokes [`scripts/start_local_windows.ps1`](../scripts/start_local_windows.ps1). The script creates a dedicated `.venv`, installs all 11 packages listed below and their transitive dependencies, checks automated tests, then runs a **local-only** Streamlit server on `127.0.0.1`.
+
+If Windows PowerShell refuses scripts, use the one-block README command: it runs the project launcher with a **process-scoped** policy and does not persistently change machine policy. Review scripts before running. Do not download random third-party installers. If the `py -3.11` command is unavailable, reinstall Python 3.11 with the Windows Python launcher option enabled, reopen PowerShell, and retry.
+
+### Restarting the already installed Windows app
+
+```powershell
+cd "$HOME\Genotype_Pipeline_App"
+& ".\.venv\Scripts\python.exe" -m streamlit run app.py --server.address 127.0.0.1
+```
+
+Read the Local URL in PowerShell (usually `http://localhost:8501`, sometimes another port). Press **Ctrl+C** to stop. The separate folder does not overwrite any existing research project.
+
+## Linux or existing Mac installation
 
 The one-block script above is for macOS. For Windows/Linux, clone the [feature branch](https://github.com/huhcc87/Genotype_Any_Point_Mutation_Pipeline/tree/feature/streamlit-validated-pcr-rflp), create a virtual environment using Python 3.10–3.12, install `requirements.txt`, run `python -m pytest -q`, and start `python -m streamlit run app.py`. The repository's `scripts/start_local_mac.sh` intentionally checks for macOS to avoid pretending it supports other platforms.
 
