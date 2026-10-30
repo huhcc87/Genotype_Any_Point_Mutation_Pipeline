@@ -9,6 +9,7 @@ from src.assay import analyze_assay
 from src.document_input import extract_sequences
 from src.sequence import load_sequence
 from src.reference_mapping import map_genomic_snv
+from src.variant_input import parse_marked_reference, compare_wild_type_mutant
 from src.ranking import rank_enzymes
 from src.ladders import LADDERS,ladder_notes
 from src.visualization import render_ladder_gel,render_sequence_figure,sequence_markup
@@ -42,7 +43,7 @@ highlighted DNA sequence and input FASTA. Test in the laboratory before use.
 """)
 with st.sidebar:
     st.header("Assay setup")
-    mode=st.radio("Input source",["Try example","Upload file","Paste sequence"])
+    mode=st.radio("Input source",["Try example","MSH3 E413K example","Upload file","Paste sequence","WT marked motif → mutant motif","Complete WT and mutant sequences"])
     name=st.text_input("Assay name","Variant")
     mutation=st.text_input("Mutation (local sequence position)","C101T")
     max_enzymes=st.slider("Maximum restriction enzymes",3,50,20)
@@ -59,10 +60,48 @@ with st.sidebar:
         st.caption("Enter g.123C>T or NC_000001.11:g.123C>T above. The interval and accession are not independently fetched.")
     st.divider()
     st.caption("Accepted: .fa, .fasta, .fna, .txt, .docx, .pdf (10 MB maximum).")
+    st.caption("For WT marked or paired-sequence modes, the app determines the local substitution automatically; the Mutation field is ignored.")
     st.caption("Do not upload identifiable patient data to any publicly hosted application.")
 
 sequence=None
-if mode=="Try example":
+variant_metadata=None
+input_error=None
+if mode=="MSH3 E413K example":
+    st.subheader("MSH3 exon 8 E413K — marked WT codon demonstration")
+    marked_path=Path(__file__).resolve().parent/"examples"/"MSH3_exon8_E413K_WT_marked.txt"
+    st.caption("Input is the user-provided 322 bp fragment. [GAG]→AAG maps to local G219A; transcript c.1237G>A not independently verified.")
+    if marked_path.is_file():
+        marked_example=marked_path.read_text(encoding="utf-8")
+        st.code(marked_example,language="text")
+        try:
+            sequence, derived_mutation, variant_metadata=parse_marked_reference(marked_example,"AAG")
+            st.success(f"Derived local variant: {derived_mutation}, reference length {len(sequence)} bp.")
+        except ValueError as exc:
+            input_error=str(exc); st.error(input_error)
+    else:
+        st.error("Missing example file.")
+elif mode=="WT marked motif → mutant motif":
+    st.subheader("Mark the WT codon and enter its mutant replacement")
+    marked_text=st.text_area("Wild-type DNA with exactly one marked region, e.g. AAA[GAG]CTG",height=170,
+                            placeholder="Paste only DNA, with exactly one [WT motif], e.g. ACGT[GAG]TTAC...")
+    alternate_motif=st.text_input("Mutant motif (same length; one base difference)","AAG")
+    if marked_text.strip():
+        try:
+            sequence,derived_mutation,variant_metadata=parse_marked_reference(marked_text,alternate_motif)
+            st.success(f"Calculated local substitution: {derived_mutation} (1-based, within supplied WT DNA).")
+        except ValueError as exc:
+            input_error=str(exc); st.error(input_error)
+elif mode=="Complete WT and mutant sequences":
+    st.subheader("Compare complete wild-type and mutant sequences")
+    full_wt=st.text_area("Full wild-type sequence (A/C/G/T or one-record FASTA)",height=140)
+    full_alt=st.text_area("Full mutant sequence (same length, exactly one changed base)",height=140)
+    if full_wt.strip() and full_alt.strip():
+        try:
+            sequence,derived_mutation,variant_metadata=compare_wild_type_mutant(full_wt,full_alt)
+            st.success(f"Derived variant: {derived_mutation}; both sequences have {len(sequence)} bp.")
+        except ValueError as exc:
+            input_error=str(exc); st.error(input_error)
+elif mode=="Try example":
     st.subheader("Built-in example: TTN HMERF (200 bp)")
     st.write("Demonstration point mutation C101T in the included TTN exon sequence.")
     if SAMPLE.is_file():
@@ -100,7 +139,9 @@ else:
 # Never display a previous result for a different sequence or variant.
 current_signature = (
     hashlib.sha256(sequence.encode("ascii")).hexdigest() if sequence else None,
-    mutation.strip().upper(),
+    (derived_mutation if variant_metadata else mutation.strip().upper()) if input_error is None else "",
+    str(variant_metadata) if variant_metadata else "",
+    mode,
     variant_mode, reference_accession, genomic_start, genomic_strand, genome_assembly,
     name,
     max_enzymes,
@@ -111,17 +152,20 @@ if st.session_state.get("input_signature") != current_signature:
     st.session_state.pop("export", None)
 
 if st.button("Analyze example" if mode=="Try example" else "Analyze sequence",
-             type="primary",disabled=sequence is None):
+             type="primary",disabled=sequence is None or input_error is not None):
     try:
-        assay_name=("TTN HMERF example" if name=="Variant" and mode=="Try example" else name)
+        assay_name=("TTN HMERF example" if name=="Variant" and mode=="Try example" else "MSH3 exon 8 E413K example" if name=="Variant" and mode=="MSH3 E413K example" else name)
         with st.spinner("Designing primers and screening enzyme patterns..."):
             metadata = None
-            local_mutation = mutation
-            if variant_mode.startswith("Genomic"):
+            local_mutation = variant_metadata['variant'] if variant_metadata else mutation
+            if variant_metadata is None and variant_mode.startswith("Genomic"):
                 metadata = map_genomic_snv(sequence, mutation, reference_accession,
                                            int(genomic_start), genomic_strand, genome_assembly)
                 local_mutation = metadata["local_mutation"]
             result=analyze_assay(sequence,local_mutation,assay_name,max_enzymes)
+            if variant_metadata:
+                result["variant_input"] = variant_metadata
+                result["warnings"].append("WT/mutant comparison verifies a single local substitution, not the reference transcript or protein annotation.")
             if metadata:
                 result["reference_mapping"] = metadata
                 result["warnings"].append(metadata["mapping_warning"])
