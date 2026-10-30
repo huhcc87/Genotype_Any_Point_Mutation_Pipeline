@@ -43,7 +43,7 @@ highlighted DNA sequence and input FASTA. Test in the laboratory before use.
 """)
 with st.sidebar:
     st.header("Assay setup")
-    mode=st.radio("Input source",["Try example","MSH3 E413K example","Upload file","Paste sequence","WT marked motif → mutant motif","Complete WT and mutant sequences"])
+    mode=st.radio("Input source",["Try example","Upload file","Paste sequence","WT marked motif → mutant motif","Complete WT and mutant sequences"])
     name=st.text_input("Assay name","Variant")
     mutation=st.text_input("Mutation (local sequence position)","C101T")
     max_enzymes=st.slider("Maximum restriction enzymes",3,50,20)
@@ -66,21 +66,7 @@ with st.sidebar:
 sequence=None
 variant_metadata=None
 input_error=None
-if mode=="MSH3 E413K example":
-    st.subheader("MSH3 exon 8 E413K — marked WT codon demonstration")
-    marked_path=Path(__file__).resolve().parent/"examples"/"MSH3_exon8_E413K_WT_marked.txt"
-    st.caption("Input is the user-provided 322 bp fragment. [GAG]→AAG maps to local G219A; transcript c.1237G>A not independently verified.")
-    if marked_path.is_file():
-        marked_example=marked_path.read_text(encoding="utf-8")
-        st.code(marked_example,language="text")
-        try:
-            sequence, derived_mutation, variant_metadata=parse_marked_reference(marked_example,"AAG")
-            st.success(f"Derived local variant: {derived_mutation}, reference length {len(sequence)} bp.")
-        except ValueError as exc:
-            input_error=str(exc); st.error(input_error)
-    else:
-        st.error("Missing example file.")
-elif mode=="WT marked motif → mutant motif":
+if mode=="WT marked motif → mutant motif":
     st.subheader("Mark the WT codon and enter its mutant replacement")
     marked_text=st.text_area("Wild-type DNA with exactly one marked region, e.g. AAA[GAG]CTG",height=170,
                             placeholder="Paste only DNA, with exactly one [WT motif], e.g. ACGT[GAG]TTAC...")
@@ -154,7 +140,7 @@ if st.session_state.get("input_signature") != current_signature:
 if st.button("Analyze example" if mode=="Try example" else "Analyze sequence",
              type="primary",disabled=sequence is None or input_error is not None):
     try:
-        assay_name=("TTN HMERF example" if name=="Variant" and mode=="Try example" else "MSH3 exon 8 E413K example" if name=="Variant" and mode=="MSH3 E413K example" else name)
+        assay_name=("TTN HMERF example" if name=="Variant" and mode=="Try example" else name)
         with st.spinner("Designing primers and screening enzyme patterns..."):
             metadata = None
             local_mutation = variant_metadata['variant'] if variant_metadata else mutation
