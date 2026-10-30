@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import click
 from src.assay import analyze_assay
+from src.sequence import read_sequence_file
 from src.gel import draw_virtual_gel
 
 def save(result,output_dir):
@@ -32,7 +33,7 @@ def cli():
 @click.option("--output-dir",default="output")
 def analyze(seq,mutation,name,max_enzymes,output_dir):
     try:
-        result=analyze_assay(seq,mutation,name,max_enzymes)
+        result=analyze_assay(read_sequence_file(seq) if __import__('pathlib').Path(seq).is_file() else seq,mutation,name,max_enzymes)
         path=save(result,output_dir)
     except (OSError,ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
@@ -50,7 +51,7 @@ def batch(csv_path,output_dir):
             raise click.ClickException("Required CSV columns: name,seq,mutation")
         for i,row in enumerate(reader,1):
             try:
-                result=analyze_assay(row["seq"],row["mutation"],row["name"])
+                result=analyze_assay(read_sequence_file(row["seq"]) if __import__('pathlib').Path(row["seq"]).is_file() else row["seq"],row["mutation"],row["name"])
                 save(result,output_dir)
                 click.echo(f"{i}: {result['status']}")
             except (OSError,ValueError) as exc:
