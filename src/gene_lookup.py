@@ -70,7 +70,7 @@ def search_gene(identifier):
     elif SYMBOL_RE.fullmatch(name):
         endpoint = "/lookup/symbol/homo_sapiens/" + quote(name, safe="")
     else:
-        raise ValueError("Enter a human gene symbol (MSH3) or Ensembl gene ID (ENSG...).")
+        raise ValueError("Enter a human gene symbol or Ensembl gene ID (ENSG...).")
     data = _get_json(endpoint, {"expand": 1})
     if data.get("object_type") != "Gene" or data.get("species") != "homo_sapiens":
         raise ValueError("The requested identifier did not resolve to a human gene.")
