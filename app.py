@@ -12,7 +12,7 @@ from src.reference_mapping import map_genomic_snv
 from src.variant_input import parse_marked_reference, compare_wild_type_mutant
 from src.gene_lookup import search_gene, get_transcript_details, get_cds, codon_table, alternative_codons, fetch_genomic_assay
 from src.ranking import rank_enzymes
-from src.ladders import LADDERS,ladder_notes
+from src.ladders import LADDERS,ladder_notes,recommended_ladders
 from src.visualization import render_ladder_gel,render_sequence_figure,sequence_markup
 from src.exports import build_export_bundle
 
@@ -69,19 +69,20 @@ variant_metadata=None
 input_error=None
 if mode=="Search gene / transcript / exon / codon":
     st.subheader("Search human gene → transcript → exon → codon")
-    st.caption("Ensembl REST, human GRCh38. Internet required. Reference mapping is transcript-specific.")
+    st.caption("Ensembl REST reference lookup. Internet required; no mixing of reference assemblies.")
+    lookup_assembly=st.selectbox("Reference assembly",["GRCh38","GRCh37"])
     identifier=st.text_input("Human gene symbol or Ensembl gene ID","")
     if st.button("Find gene and transcripts"):
         try:
             with st.spinner("Retrieving gene annotation from Ensembl..."):
-                found=search_gene(identifier)
+                found=search_gene(identifier,assembly=lookup_assembly)
             st.session_state["lookup_gene"]=found
             st.session_state.pop("lookup_cds",None)
             st.session_state.pop("lookup_assay",None)
         except ValueError as exc:
             st.error(str(exc))
     found=st.session_state.get("lookup_gene")
-    if found and found.get("query","").upper()!=identifier.strip().upper():
+    if found and (found.get("query","").upper()!=identifier.strip().upper() or found.get("assembly")!=lookup_assembly):
         found=None
         st.session_state.pop("lookup_gene",None)
         st.session_state.pop("lookup_cds",None)
@@ -96,8 +97,8 @@ if mode=="Search gene / transcript / exon / codon":
         if st.button("Load CDS and exon/codon map"):
             try:
                 with st.spinner("Mapping coding bases onto genomic exon coordinates..."):
-                    annotation=get_transcript_details(tx["id"],found["gene_id"])
-                    cds=get_cds(tx["id"])
+                    annotation=get_transcript_details(tx["id"],found["gene_id"],assembly=lookup_assembly)
+                    cds=get_cds(tx["id"],assembly=lookup_assembly)
                     rows=codon_table(annotation,cds)
                 st.session_state["lookup_cds"]={"transcript_id":tx["id"],"cds":cds,"rows":rows,"annotation":annotation}
                 st.session_state.pop("lookup_assay",None)
@@ -123,7 +124,7 @@ if mode=="Search gene / transcript / exon / codon":
             if st.button("Load reference genomic DNA for selected variant"):
                 try:
                     with st.spinner("Retrieving reference flank and checking allele orientation..."):
-                        template=fetch_genomic_assay(loaded["annotation"],loaded["cds"],codon_number,alternative["mutant_codon"])
+                        template=fetch_genomic_assay(loaded["annotation"],loaded["cds"],codon_number,alternative["mutant_codon"],assembly=lookup_assembly)
                     st.session_state["lookup_assay"]=template
                 except ValueError as exc:
                     st.error(str(exc))
@@ -285,10 +286,12 @@ if result:
             format_func=lambda i:(f"{enzymes[i]['priority_rank']}. {enzymes[i]['enzyme']} "
                                   f"— grade {enzymes[i]['design_grade']} ({enzymes[i]['priority_score']}/100)"),
             key="enzyme_index") if options else None
-        ladder_name=st.selectbox("Choose DNA molecular-weight ladder",list(LADDERS),key="ladder_name")
+        ladder_options=recommended_ladders(result["enzymes"][0]["fragments_wt"]+result["enzymes"][0]["fragments_mut"]) if result["enzymes"] else list(LADDERS)
+        ladder_name=st.selectbox("Choose DNA molecular-weight ladder",ladder_options,key="ladder_name")
         ladder=LADDERS[ladder_name]
         st.caption(f"{ladder['vendor']} | {ladder['catalog']} | "
                    f"marker range {min(ladder['sizes'])}–{max(ladder['sizes'])} bp")
+        st.caption("Marker sizes (bp): "+", ".join(map(str,ladder["sizes"])))
         if ladder["source"]:
             st.link_button("Ladder manufacturer's product information",ladder["source"])
         enzyme=enzymes[enzyme_index] if enzyme_index is not None else None
