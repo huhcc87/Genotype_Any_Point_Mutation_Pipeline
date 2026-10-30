@@ -42,7 +42,7 @@ def test_genomic_allele_and_negative_orientation(monkeypatch):
     transcript={"id":"ENST00000000001","strand":-1,"seq_region_name":"1",
                 "Translation":{"start":300,"end":302},
                 "Exon":[{"start":300,"end":302}]}
-    def fake(path, params=None):
+    def fake(path, params=None, assembly='GRCh38'):
         assert path.startswith("/sequence/region/human/")
         return {"seq":"A"*300+"C"+"A"*300}
     monkeypatch.setattr(g,"_get_json",fake)
