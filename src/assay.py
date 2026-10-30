@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from .sequence import load_sequence, parse_mutation, apply_mutation
 from .restriction import find_differential_enzymes
 from .primers import design_primers, simple_end_primers, check_primer_quality
+from .primer_qc import assess_primer_pair
 
 DISCLAIMER = (
     "Research-use in-silico prediction only. Validate genome-wide primer specificity, "
@@ -28,7 +29,8 @@ def analyze_assay(seq_input: str, mutation: str, name="Variant", max_enzymes=10)
         left, right = pair["forward_start"], pair["reverse_start"]
         if not (0 <= left < pos < right < len(sequence)):
             continue
-        pair["warnings"] = (
+        pair["quality_metrics"] = assess_primer_pair(pair, sequence)
+        pair["warnings"] = pair["quality_metrics"]["quality_warnings"] + (
             check_primer_quality(pair["forward"], pair["forward_tm"]) +
             check_primer_quality(pair["reverse"], pair["reverse_tm"])
         )
