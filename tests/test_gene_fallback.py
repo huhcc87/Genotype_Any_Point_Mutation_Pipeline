@@ -28,5 +28,5 @@ def test_no_fallback_cross_assembly(monkeypatch):
 def test_fallback_fails_closed(monkeypatch):
     monkeypatch.setattr(g, "_get_json", lambda *a, **kw: (_ for _ in ()).throw(ValueError("HTTP 500")))
     monkeypatch.setattr(g, "_mygene_lookup", lambda x: (_ for _ in ()).throw(ValueError("unavailable")))
-    with pytest.raises(ValueError, match="both"):
+    with pytest.raises(ValueError, match="fallback also failed"):
         g.search_gene("TTN")
