@@ -1,214 +1,62 @@
 #!/usr/bin/env python3
-"""
-Genotype Pipeline CLI
-Design PCR-RFLP assays for point mutations.
-"""
-
-import click
+"""CLI sharing the Streamlit assay engine."""
+import csv
+import json
 from pathlib import Path
-from datetime import datetime
-
-from src.sequence import load_sequence, parse_mutation, apply_mutation
-from src.restriction import find_differential_enzymes, print_enzyme_table
-from src.primers import design_primers, simple_end_primers, design_mismatch_primers, check_primer_quality
+import click
+from src.assay import analyze_assay
 from src.gel import draw_virtual_gel
-from src.report import generate_markdown_report
-from src.word_report import generate_word_report
-from src.html_report import generate_html_report
 
+def save(result,output_dir):
+    directory=Path(output_dir)
+    directory.mkdir(parents=True,exist_ok=True)
+    stem="".join(c if c.isalnum() or c in "-_" else "_" for c in result["name"])[:60]
+    stamp=result["timestamp_utc"].replace(":","").replace("-","")
+    base=directory / (stem+"_"+stamp)
+    target=base.with_suffix(".json")
+    target.write_text(json.dumps(result,indent=2),encoding="utf-8")
+    if result["enzymes"] and result["selected_primer"]:
+        e=result["enzymes"][0]
+        draw_virtual_gel(result["selected_primer"]["product_size"],e["cuts_wt"],e["cuts_mut"],e["enzyme"],str(base)+"_gel.png")
+    return target
 
-@click.command()
-@click.option("--seq", required=True, help="DNA sequence or path to FASTA file")
-@click.option("--mutation", required=True, help="Mutation e.g. G1237A or c.G1237A")
-@click.option("--name", default="Variant", help="Name of the variant")
-@click.option("--max-enzymes", default=5, type=int, help="Maximum number of enzymes to show")
-def analyze(seq, mutation, name, max_enzymes):
-    """Design PCR-RFLP assay for a point mutation."""
-    click.echo("=" * 60)
-    click.echo("  Genotype Pipeline - PCR-RFLP Design")
-    click.echo("=" * 60)
+@click.group()
+def cli():
+    """Research-use PCR-RFLP tools."""
 
+@cli.command()
+@click.option("--seq",required=True)
+@click.option("--mutation",required=True)
+@click.option("--name",default="Variant")
+@click.option("--max-enzymes",default=10,type=click.IntRange(1,100))
+@click.option("--output-dir",default="output")
+def analyze(seq,mutation,name,max_enzymes,output_dir):
     try:
-        sequence = load_sequence(seq)
-        click.echo(f"\n[1] Sequence loaded: {len(sequence)} bp")
-    except Exception as e:
-        click.echo(f"Error loading sequence: {e}")
-        return
+        result=analyze_assay(seq,mutation,name,max_enzymes)
+        path=save(result,output_dir)
+    except (OSError,ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"{result['status']}: {result['mutation']} | {len(result['enzymes'])} enzymes")
+    click.echo(str(path))
 
-    try:
-        pos, ref, alt = parse_mutation(mutation)
-        click.echo(f"[2] Mutation parsed: position {pos+1} ({ref}>{alt})")
-    except Exception as e:
-        click.echo(f"Error parsing mutation: {e}")
-        return
-
-    try:
-        wt_seq, mut_seq = apply_mutation(sequence, pos, ref, alt)
-        click.echo("[3] Wild-type and mutant sequences created")
-        ctx_start = max(0, pos - 8)
-        ctx_end = min(len(sequence), pos + 9)
-        click.echo(f"    Context: ...{wt_seq[ctx_start:ctx_end]}...")
-        click.echo(f"    Mutant : ...{mut_seq[ctx_start:ctx_end]}...")
-    except Exception as e:
-        click.echo(f"Error applying mutation: {e}")
-        return
-
-    click.echo("\n[4] Searching for differential restriction enzymes...")
-    enzymes = find_differential_enzymes(wt_seq, mut_seq, max_results=max_enzymes)
-    if enzymes:
-        print_enzyme_table(enzymes)
-        best = enzymes[0]
-        click.echo(f"\n  Best enzyme: {best['enzyme']} (site: {best['site']})")
-    else:
-        click.echo("  No differential enzymes found.")
-
-    click.echo("\n[5] Designing primers...")
-    primers = design_primers(sequence, pos)
-    if not primers:
-        click.echo("  Primer3 found no pairs — trying mismatch primers...")
-        primers = design_mismatch_primers(sequence, pos, alt)
-    if not primers:
-        click.echo("  Using simple end primers...")
-        primers = simple_end_primers(sequence)
-
-    if primers:
-        for p in primers[:3]:
-            ptype = p.get("type", "natural")
-            click.echo(f"\n  Pair {p['pair']} ({ptype}):")
-            click.echo(f"    Forward : {p['forward']} (Tm={p['forward_tm']}°C)")
-            click.echo(f"    Reverse : {p['reverse']} (Tm={p['reverse_tm']}°C)")
-            click.echo(f"    Product : {p['product_size']} bp")
-
-            fwd_warn = check_primer_quality(p['forward'], p['forward_tm'])
-            rev_warn = check_primer_quality(p['reverse'], p['reverse_tm'])
-            if fwd_warn or rev_warn:
-                click.echo("    Warnings:")
-                for w in fwd_warn:
-                    click.echo(f"      Forward: {w}")
-                for w in rev_warn:
-                    click.echo(f"      Reverse: {w}")
-
-    gel_path = None
-    if enzymes and primers:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        safe_name = name.replace(" ", "_")
-        gel_file = Path("output") / f"{safe_name}_{timestamp}_gel.png"
-        try:
-            best = enzymes[0]
-            gel_path = draw_virtual_gel(
-                amplicon_size=primers[0]["product_size"],
-                cuts_wt=best.get("cuts_wt", []),
-                cuts_mut=best.get("cuts_mut", []),
-                enzyme_name=best["enzyme"],
-                output_path=str(gel_file)
-            )
-            click.echo(f"\n[6] Virtual gel saved: {gel_path}")
-        except Exception as e:
-            click.echo(f"  Could not generate gel: {e}")
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    safe_name = name.replace(" ", "_")
-
-    # Markdown report
-    report_file = Path("output") / f"{safe_name}_{timestamp}_report.md"
-    try:
-        generate_markdown_report(
-            name=name,
-            mutation_info={
-                "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "position": pos + 1,
-                "ref": ref,
-                "alt": alt,
-                "seq_length": len(sequence),
-            },
-            enzymes=enzymes,
-            primers=primers,
-            gel_path=str(gel_path) if gel_path else None,
-            output_path=str(report_file),
-        )
-        click.echo(f"[7] Report saved: {report_file}")
-    except Exception as e:
-        click.echo(f"Could not generate report: {e}")
-
-    # Word report
-    word_file = Path("output") / f"{safe_name}_{timestamp}_report.docx"
-    try:
-        generate_word_report(
-            name=name,
-            mutation_info={
-                "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "position": pos + 1,
-                "ref": ref,
-                "alt": alt,
-                "seq_length": len(sequence),
-            },
-            enzymes=enzymes,
-            primers=primers,
-            gel_path=str(gel_path) if gel_path else None,
-            output_path=str(word_file),
-        )
-        click.echo(f"[8] Word report saved: {word_file}")
-    except Exception as e:
-        click.echo(f"Could not generate Word report: {e}")
-
-    # HTML report
-    html_file = Path("output") / f"{safe_name}_{timestamp}_report.html"
-    try:
-        generate_html_report(
-            name=name,
-            mutation_info={
-                "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "position": pos + 1,
-                "ref": ref,
-                "alt": alt,
-                "seq_length": len(sequence),
-            },
-            enzymes=enzymes,
-            primers=primers,
-            gel_path=str(gel_path) if gel_path else None,
-            output_path=str(html_file),
-        )
-        click.echo(f"[9] HTML report saved: {html_file}")
-    except Exception as e:
-        click.echo(f"Could not generate HTML report: {e}")
-
-    click.echo("\n" + "=" * 60)
-    click.echo("  Analysis complete")
-    click.echo("=" * 60)
-
-
-@click.command()
-@click.option("--csv", required=True, help="CSV file with columns: name,seq,mutation")
-def batch(csv):
-    """Process multiple mutations from a CSV file."""
-    import csv as csv_module
-    click.echo(f"Running batch mode from: {csv}\n")
-    
-    with open(csv, newline="") as f:
-        reader = csv_module.DictReader(f)
-        for row in reader:
-            name = row.get("name", "Variant")
-            seq = row.get("seq", "")
-            mutation = row.get("mutation", "")
-            if not seq or not mutation:
-                click.echo(f"Skipping incomplete row: {row}")
-                continue
-            click.echo(f"\n{'='*60}")
-            click.echo(f"Processing: {name}")
-            click.echo(f"{'='*60}")
-            from click.testing import CliRunner
-            runner = CliRunner()
-            result = runner.invoke(analyze, [
-                "--seq", seq,
-                "--mutation", mutation,
-                "--name", name
-            ])
-            click.echo(result.output)
-
-
-cli = click.Group()
-cli.add_command(analyze)
-cli.add_command(batch)
-
-if __name__ == "__main__":
+@cli.command()
+@click.option("--csv","csv_path",required=True,type=click.Path(exists=True))
+@click.option("--output-dir",default="output")
+def batch(csv_path,output_dir):
+    errors=0
+    with open(csv_path,newline="",encoding="utf-8") as source:
+        reader=csv.DictReader(source)
+        if not {"name","seq","mutation"}.issubset(reader.fieldnames or []):
+            raise click.ClickException("Required CSV columns: name,seq,mutation")
+        for i,row in enumerate(reader,1):
+            try:
+                result=analyze_assay(row["seq"],row["mutation"],row["name"])
+                save(result,output_dir)
+                click.echo(f"{i}: {result['status']}")
+            except (OSError,ValueError) as exc:
+                errors+=1
+                click.echo(f"{i}: ERROR {exc}",err=True)
+    if errors:
+        raise click.ClickException(f"{errors} rows failed")
+if __name__=="__main__":
     cli()
