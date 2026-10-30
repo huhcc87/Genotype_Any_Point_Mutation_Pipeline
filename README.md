@@ -1,57 +1,77 @@
-# Genotype — interactive PCR-RFLP assay designer
+# Genotype — PCR-RFLP assay designer
 
-A research-use **in-silico PCR-RFLP design** application. It accepts DNA sequences from FASTA, TXT, DOCX and text-based PDFs, designs primer candidates, ranks differential restriction enzymes on the actual primer amplicon, simulates complete digestion and exports multi-format reports.
+**Locally run, research-use Streamlit application** for sequence upload → primer design → ranked restriction enzymes → predicted genotype bands and gel → complete downloadable reports.
 
-## Launch locally on macOS
+## Start on Mac: copy ONE code block into Terminal
+
+**Requirements:** Mac with internet access, Git, and either Python 3.11 or Homebrew. This command creates an independent installation at `~/Genotype_Pipeline_App`; it **does not modify** an existing research folder on an external drive. It checks for local changes before updating. The launcher installs dependencies, runs tests, and starts Streamlit bound only to this Mac.
 
 ```bash
-cd /Volumes/Extreme_SSD/Genotype_Pipeline
-git fetch origin
-git switch feature/streamlit-validated-pcr-rflp
-source venv/bin/activate
-python -m pip install -r requirements.txt
-python -m pytest -q
-streamlit run app.py
+(
+  set -eu
+  APP_DIR="$HOME/Genotype_Pipeline_App"
+  BRANCH="feature/streamlit-validated-pcr-rflp"
+  REPO="https://github.com/huhcc87/Genotype_Any_Point_Mutation_Pipeline.git"
+
+  if ! command -v git >/dev/null 2>&1; then
+    echo "Install Git first: https://git-scm.com/downloads/mac"
+    exit 1
+  fi
+
+  if [ -d "$APP_DIR/.git" ]; then
+    if [ -n "$(git -C "$APP_DIR" status --porcelain)" ]; then
+      echo "Existing uncommitted changes: $APP_DIR. Preserve them before updating."
+      exit 1
+    fi
+    git -C "$APP_DIR" fetch origin "$BRANCH"
+    git -C "$APP_DIR" switch "$BRANCH"
+    git -C "$APP_DIR" pull --ff-only origin "$BRANCH"
+  elif [ -e "$APP_DIR" ]; then
+    echo "Folder already exists and is not this Git checkout: $APP_DIR"
+    exit 1
+  else
+    git clone --branch "$BRANCH" --single-branch "$REPO" "$APP_DIR"
+  fi
+
+  bash "$APP_DIR/scripts/start_local_mac.sh"
+)
 ```
 
-The current venv may use Python 3.9; the CI matrix targets 3.10, 3.11, and 3.12. Prefer a new Python 3.11 virtual environment for reproducibility.
+If both Python 3.11 and Homebrew are unavailable, the launcher explains how to install Python 3.11 from [python.org](https://www.python.org/downloads/macos/) and then rerun the same command. If Git is absent, install it from [git-scm.com](https://git-scm.com/downloads/mac). The browser's **Local URL** is printed by Streamlit, typically `http://localhost:8501` (or `8502`). Keep Terminal open; press Control+C to stop.
 
-## Five-step workflow
+**Further help:** [Complete installation / all dependency versions](docs/INSTALLATION.md) · [Step-by-step user guide](docs/USER_GUIDE.md) · [Troubleshooting](docs/TROUBLESHOOTING.md).
 
-1. Select **Try example** for a ready-to-run 200 bp TTN HMERF test sequence (C101T in the local fragment), or upload FASTA/TXT/Word DOCX/text-selectable PDF, or paste a DNA sequence.
-2. Enter a substitution in 1-based **local sequence** coordinates, e.g. `C101T`. The tool **does not automatically map HGVS c. coordinates** to genomic/exon sequence.
-3. Review selected forward/reverse primer sequences, melting temperatures, colored binding regions, variant location and product size.
-4. Compare **design grades** A–D and heuristic scores for potential restriction enzymes. These prioritize visible discriminatory fragments and simple cut patterns; scores are **not** measurements of enzyme specificity, cost, star activity or performance.
-5. Select a DNA ladder, visualize virtual WT/heterozygous/mutant digestion lanes, and download **all results** as one ZIP.
+## What you can upload, analyze, and download
 
-## Report bundle
+| Stage | Supported functionality |
+| --- | --- |
+| **Upload** | FASTA (`.fa`, `.fasta`, `.fna`), `.txt`, Word `.docx`, text-based `.pdf`, or pasted DNA; 10 MB max upload |
+| **Analyze** | Single-base substitution in 1-based **local sequence** coordinates (example `C101T`); reference-base validation |
+| **Primers** | Forward and reverse primer candidates, Tm, product size, color-highlighted DNA binding regions |
+| **Enzymes** | Predicted differential restriction fragments, A–D **heuristic design** grades, ranking |
+| **Gel** | Simulated WT, heterozygous and mutant digests (fragment sizes in bp); Thermo, NEB and generic ladder presets |
+| **Download** | Full ZIP package plus individual PDF, Word, HTML, PNG, CSV, JSON and FASTA outputs |
+
+### Downloads in one ZIP
 
 `assay_report.pdf`, `assay_report.docx`, `assay_report.html`, `sequence_highlighted.html`, `virtual_gel.png`, `primer_map.png`, `all_primers.csv`, `ranked_enzymes.csv`, `expected_fragments.csv`, `analysis.json`, `input_reference.fasta`, `README_RESULTS.txt`.
 
-## Supported upload conventions
+### Dependencies: all installed automatically
 
-- FASTA: one or multiple records with standard `>` headers; choose the intended record from the list.
-- TXT/DOCX/PDF: provide DNA sequence on separate contiguous lines (ideally at least 60 bases). Multiple blocks can be individually selected.
-- Scanned PDFs cannot be read without OCR. Binary Word `.doc` is not supported; save as DOCX.
-- Upload limit 10 MB. Only A/C/G/T sequence characters are accepted. Do not upload patient identifiers to publicly hosted deployments.
-- Check the **reference allele** at the variant position before analysis. Coordinate system is always local, not automatically transcript HGVS.
+Python **3.11**, and Python packages `biopython`, `primer3-py`, `click`, `pyyaml`, `python-docx`, `matplotlib`, `pandas`, `streamlit`, `pytest`, `pypdf`, `reportlab`. Exact supported ranges are maintained in [requirements.txt](requirements.txt) and enumerated in the [installation guide](docs/INSTALLATION.md). There is **no need to install these Python packages manually**.
 
-## Available marker options
+### One-click example
 
-Thermo Fisher GeneRuler 100 bp SM0241 and NEB Quick-Load Purple 100 bp N0551 (manufacturer-derived nominal sizes), plus **generic illustrative** 50 bp and 1 kb presets. Simulated migration is not calibrated and cannot predict precise band brightness, resolution, or digestion yield. For a real gel, use manufacturer instructions for the precise catalogue product.
+In Streamlit's sidebar, choose **Try example** → **Analyze example**. A TTN fragment and local `C101T` substitution are included. Review all five results tabs and select **Prepare all reports** to download the ZIP.
 
-## CLI
+**Limitations:** In-silico research candidate design, **not** a clinical genotype caller or validated assay. This app does not automatically map HGVS transcript/genome coordinates, verify whole-genome primer specificity, or validate enzyme conditions. Grades reflect a computational heuristic, not measured restriction enzyme efficiency. No scanned-PDF OCR. Never upload patient identifiers to a public deployment.
 
-```bash
-python cli.py analyze --seq examples/ttn_exon344_HMERF.fasta --mutation C101T --name TTN_HMERF
-python cli.py batch --csv examples/batch_example.csv
-python -m pytest -q
-```
+## More options
 
-## Scientific limitations
+- [Full app user guide](docs/USER_GUIDE.md)
+- [Installation and dependency list](docs/INSTALLATION.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+- [Automated software tests](https://github.com/huhcc87/Genotype_Any_Point_Mutation_Pipeline/actions)
+- [Draft feature pull request](https://github.com/huhcc87/Genotype_Any_Point_Mutation_Pipeline/pull/1)
 
-Research use only; not a clinical diagnostic or sample genotype caller. In-silico candidates require independently validated primer uniqueness, lab PCR, fragment visualization, enzyme activity and complete digestion assumptions. Full HGVS/reference accession mapping, experimentally validated dCAPS mismatch primers, genome-wide primer specificity and experimental reaction optimisation are **not implemented**. Do not order reagents based on grading alone.
-
-## Development
-
-App: `app.py`; analysis: `src/assay.py`; input: `src/document_input.py`; ladder metadata: `src/ladders.py`; ranking: `src/ranking.py`; figures: `src/visualization.py`; reports: `src/exports.py`; test: `tests/`. Verify GitHub Actions before merging the feature branch.
+The interactive application is on `feature/streamlit-validated-pcr-rflp` until reviewed and merged into `main`.
