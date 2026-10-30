@@ -86,79 +86,175 @@ def _get_json(resource, params=None, assembly="GRCh38"):
     raise ValueError(f"Reference service unavailable: {last_error or 'unknown reason'}")
 
 
-def search_gene(identifier, assembly="GRCh38"):
-    """Fast lookup: one gene record plus lightweight coding transcript features.
+def _mygene_lookup(name):
+    """Retrieve independently indexed gene/transcript identifiers, not exon DNA.
 
-    Do not use expand=1 on a gene: very large genes such as TTN can time out
-    or return multi-megabyte nested exon data.
+    Only used for GRCh38 transcript discovery. Ensembl is still required for
+    reference accession and coding-exon verification before assay design.
+    """
+    import urllib.request
+    host = "https://mygene.info"
+    term = ("ensembl.gene:" if GENE_ID_RE.fullmatch(name) else "symbol:") + name
+    query = urlencode({
+        "q": term, "species": "human", "size": 5,
+        "fields": "symbol,taxid,ensembl,entrezgene",
+    })
+    uri = host + "/v3/query?" + query
+    request = Request(uri, headers={
+        "Accept": "application/json", "User-Agent": "Genotype-PCR-RFLP-research/0.5"
+    })
+    try:
+        with _opener.open(request, timeout=12) as response:
+            data = response.read(2_000_001)
+            if len(data) > 2_000_000:
+                raise ValueError("Fallback gene-annotation response was too large.")
+            payload = json.loads(data.decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("Fallback gene directory MyGene.info is also unavailable.") from exc
+    hits = payload.get("hits") if isinstance(payload, dict) else None
+    if not isinstance(hits, list):
+        raise ValueError("Fallback gene-directory response is invalid.")
+    for hit in hits:
+        if not isinstance(hit, dict) or hit.get("taxid") != 9606:
+            continue
+        if not GENE_ID_RE.fullmatch(name) and str(hit.get("symbol","")).upper() != name.upper():
+            continue
+        entries = hit.get("ensembl", [])
+        if isinstance(entries, dict):
+            entries = [entries]
+        if not isinstance(entries, list):
+            continue
+        transcripts = {}
+        matched_gene = None
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            gene_id = str(entry.get("gene", "")).split(".")[0]
+            if not GENE_ID_RE.fullmatch(gene_id):
+                continue
+            if GENE_ID_RE.fullmatch(name) and gene_id.upper() != name.upper():
+                continue
+            matched_gene = gene_id
+            txids = entry.get("transcript", [])
+            if isinstance(txids, str):
+                txids = [txids]
+            if not isinstance(txids, list):
+                continue
+            for accession in txids:
+                accession = str(accession)
+                base, _, version = accession.partition(".")
+                if not TX_ID_RE.fullmatch(base):
+                    continue
+                transcripts[base] = {
+                    "id":base, "version":int(version) if version.isdigit() else None,
+                    "label":base, "is_canonical":False, "coding_length_aa":None,
+                    "exon_count":None, "strand":None, "seq_region_name":None,
+                    "assembly_name":"Not independently verified", "annotation":None,
+                }
+                if len(transcripts) >= MAX_GENE_TRANSCRIPTS:
+                    break
+        if matched_gene and transcripts:
+            return {
+                "gene_id":matched_gene, "gene_symbol":str(hit.get("symbol",name)),
+                "assembly":"GRCh38", "chromosome":None,
+                "transcripts":sorted(transcripts.values(), key=lambda t:t["id"]),
+                "reference_provider":"MyGene.info (gene/transcript discovery only)",
+                "reference_url":uri, "query":name,
+                "lookup_status":"UNVERIFIED_TRANSCRIPT_DISCOVERY",
+                "lookup_warning":(
+                    "Ensembl gene search failed. Transcript identifiers were found via "
+                    "MyGene.info and have NOT been verified against the selected genome. "
+                    "You must load and validate one transcript's CDS/exons from Ensembl "
+                    "before reference-based PCR-RFLP design is enabled."
+                ),
+            }
+    raise ValueError("The fallback gene directory returned no exact human gene match with Ensembl transcripts.")
+
+
+def search_gene(identifier, assembly="GRCh38"):
+    """Find genes via Ensembl; if GRCh38 lookup fails, discover IDs via MyGene.
+
+    Gene discovery alone is not a reference validation.
     """
     name = str(identifier).strip()
+    if assembly not in HOSTS:
+        raise ValueError("Unsupported genome assembly.")
     if GENE_ID_RE.fullmatch(name):
         endpoint = "/lookup/id/" + quote(name.upper(), safe="")
     elif SYMBOL_RE.fullmatch(name):
         endpoint = "/lookup/symbol/homo_sapiens/" + quote(name, safe="")
     else:
         raise ValueError("Enter a human gene symbol or Ensembl ENSG gene ID.")
-    gene = _get_json(endpoint, assembly=assembly)
-    if not isinstance(gene, dict) or gene.get("object_type") != "Gene" or gene.get("species") != "homo_sapiens":
-        raise ValueError("Identifier did not resolve to a human gene.")
-    if gene.get("assembly_name") not in (None, assembly):
-        raise ValueError("Expected the GRCh38 human reference.")
-    gene_id = str(gene.get("id", ""))
-    if not GENE_ID_RE.fullmatch(gene_id):
-        raise ValueError("Ensembl did not return a valid human gene ID.")
 
-    features = _get_json(
-        "/overlap/id/" + quote(gene_id, safe=""),
-        {"feature": "transcript", "biotype": "protein_coding"}, assembly=assembly,
-    )
-    if not isinstance(features, list) or len(features) > MAX_GENE_TRANSCRIPTS:
-        raise ValueError("Ensembl transcript response is invalid or exceeds the supported limit.")
-    canonical = str(gene.get("canonical_transcript") or "").split(".")[0]
-    transcripts = []
-    for t in features:
-        if not isinstance(t, dict):
-            continue
-        # overlap/id returns overlaps from neighbouring genes too.
-        parent = str(t.get("Parent") or t.get("gene_id") or "")
-        if parent != gene_id:
-            continue
-        tid = str(t.get("id", ""))
-        if not TX_ID_RE.fullmatch(tid):
-            continue
-        if t.get("biotype") != "protein_coding":
-            continue
-        if str(t.get("seq_region_name")) == "MT":
-            continue
-        transcripts.append({
-            "id": tid,
-            "version": t.get("version"),
-            "label": t.get("external_name") or t.get("display_name") or tid,
-            "is_canonical": tid == canonical,
-            "coding_length_aa": None,
-            "exon_count": None,
-            "strand": t.get("strand"),
-            "seq_region_name": t.get("seq_region_name"),
-            "assembly_name": t.get("assembly_name", assembly),
-            # Detail is intentionally loaded only after transcript selection.
-            "annotation": None,
-        })
-    transcripts.sort(key=lambda t: (not t["is_canonical"], t["id"]))
-    if not transcripts:
-        raise ValueError(
-            "No matching protein-coding transcripts were returned. "
-            "Check the gene identifier or try another reference sequence."
-        )
-    return {
-        "gene_id": gene_id,
-        "gene_symbol": gene.get("display_name", name),
-        "assembly": assembly,
-        "chromosome": gene.get("seq_region_name"),
-        "transcripts": transcripts,
-        "reference_provider": "Ensembl REST",
-        "reference_url": HOSTS[assembly] + endpoint,
-        "query": name,
-    }
+    try:
+        try:
+            gene = _get_json(endpoint, assembly=assembly)
+        except ValueError as exc:
+            raise ValueError(f"Gene record endpoint {endpoint} failed: {exc}") from exc
+        if not isinstance(gene, dict) or gene.get("object_type") != "Gene" or gene.get("species") != "homo_sapiens":
+            raise ValueError("Ensembl did not return a human gene.")
+        if gene.get("assembly_name") not in (None, assembly):
+            raise ValueError("Ensembl returned a different genome assembly.")
+        gene_id = str(gene.get("id",""))
+        if not GENE_ID_RE.fullmatch(gene_id):
+            raise ValueError("Ensembl did not return a valid gene ID.")
+        try:
+            features = _get_json(
+                "/overlap/id/" + quote(gene_id, safe=""),
+                {"feature":"transcript","biotype":"protein_coding"},
+                assembly=assembly,
+            )
+        except ValueError as exc:
+            raise ValueError(f"Transcript-list endpoint /overlap/id/{gene_id} failed: {exc}") from exc
+        if not isinstance(features, list) or len(features) > MAX_GENE_TRANSCRIPTS:
+            raise ValueError("Transcript-list response is invalid or too large.")
+        canonical = str(gene.get("canonical_transcript") or "").split(".")[0]
+        transcripts = []
+        for t in features:
+            if not isinstance(t,dict):
+                continue
+            parent=str(t.get("Parent") or t.get("gene_id") or "")
+            if parent != gene_id or t.get("biotype") != "protein_coding":
+                continue
+            tid=str(t.get("id",""))
+            if not TX_ID_RE.fullmatch(tid) or str(t.get("seq_region_name"))=="MT":
+                continue
+            transcripts.append({
+                "id":tid,"version":t.get("version"),
+                "label":t.get("external_name") or t.get("display_name") or tid,
+                "is_canonical":tid==canonical,"coding_length_aa":None,
+                "exon_count":None,"strand":t.get("strand"),
+                "seq_region_name":t.get("seq_region_name"),
+                "assembly_name":t.get("assembly_name",assembly),
+                "annotation":None,
+            })
+        if not transcripts:
+            raise ValueError("Ensembl returned no protein-coding transcript annotations.")
+        transcripts.sort(key=lambda t:(not t["is_canonical"], t["id"]))
+        return {
+            "gene_id":gene_id,"gene_symbol":gene.get("display_name",name),
+            "assembly":assembly,"chromosome":gene.get("seq_region_name"),
+            "transcripts":transcripts,"reference_provider":"Ensembl REST",
+            "reference_url":HOSTS[assembly]+endpoint,"query":name,
+            "lookup_status":"ENSEMBL_GENE_ANNOTATION",
+            "lookup_warning":"",
+        }
+    except ValueError as primary_error:
+        if assembly != "GRCh38":
+            raise ValueError(
+                f"GRCh37 Ensembl lookup failed: {primary_error}. "
+                "Fallback gene annotations use a different reference and cannot safely be used for GRCh37."
+            ) from primary_error
+        try:
+            fallback = _mygene_lookup(name)
+            fallback["lookup_warning"] += " Original error: " + str(primary_error)[:220]
+            return fallback
+        except ValueError as secondary_error:
+            raise ValueError(
+                f"Ensembl gene lookup failed: {primary_error}. "
+                f"MyGene.info gene-directory fallback also failed: {secondary_error}. "
+                "Use a supplied FASTA/reference sequence until one provider is reachable."
+            ) from secondary_error
 
 
 def get_transcript_details(transcript_id, expected_gene_id=None, assembly="GRCh38"):
