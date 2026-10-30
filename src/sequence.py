@@ -1,4 +1,4 @@
-"""Strict local-sequence and single-nucleotide substitution handling."""
+"""Strict DNA input parsing. Web inputs are NEVER interpreted as filesystem paths."""
 from io import StringIO
 from pathlib import Path
 import re
@@ -6,22 +6,20 @@ from Bio import SeqIO
 
 MAX_LENGTH = 2_000_000
 DNA = frozenset("ACGT")
+ALLOWED_FASTA_SUFFIXES = frozenset({".fa", ".fasta", ".fna", ".txt"})
 
 
 def load_sequence(seq_input: str) -> str:
-    """Accept a literal DNA sequence, FASTA text, or a local FASTA file path."""
+    """Parse only literal A/C/G/T or a single FASTA record, never a file path.
+
+    This behavior is deliberate: web form data must not grant local file read
+    access. The CLI uses the separate explicit read_sequence_file function.
+    """
     if not isinstance(seq_input, str) or not seq_input.strip():
-        raise ValueError("Provide a DNA sequence or FASTA file.")
+        raise ValueError("Provide a DNA sequence or FASTA text.")
     source = seq_input.strip()
-    if len(source) < 4096 and "\n" not in source:
-        try:
-            path = Path(source)
-            if path.is_file():
-                if path.suffix.lower() not in (".fa", ".fasta", ".fna", ".txt"):
-                    raise ValueError("Sequence files must be FASTA (.fa/.fasta/.fna/.txt).")
-                source = path.read_text(encoding="utf-8")
-        except OSError as exc:
-            raise ValueError("Cannot read sequence path.") from exc
+    if len(source) > MAX_LENGTH * 2 + 4096:
+        raise ValueError("Input text exceeds the supported size limit.")
     if source.startswith(">"):
         records = list(SeqIO.parse(StringIO(source), "fasta"))
         if len(records) != 1:
@@ -36,12 +34,23 @@ def load_sequence(seq_input: str) -> str:
     return sequence
 
 
-def parse_mutation(mutation: str, sequence: str = None):
-    """Parse a substitution as a 1-based position relative to the supplied sequence.
+def read_sequence_file(path: str) -> str:
+    """Read an explicitly requested local FASTA/TXT file for trusted CLI use."""
+    file = Path(path).expanduser()
+    if file.suffix.lower() not in ALLOWED_FASTA_SUFFIXES:
+        raise ValueError("CLI file must be .fa, .fasta, .fna or .txt.")
+    if not file.is_file():
+        raise ValueError(f"Not a readable sequence file: {file}")
+    if file.stat().st_size > MAX_LENGTH * 2 + 4096:
+        raise ValueError("Sequence file exceeds the size limit.")
+    return load_sequence(file.read_text(encoding="utf-8-sig"))
 
-    Supported: G123A, 123G>A, c.G123A, c.123G>A.
-    c. is only input syntax here; true HGVS transcript mapping is NOT inferred.
-    Returns (0-based index, reference base, alternate base).
+
+def parse_mutation(mutation: str, sequence: str = None):
+    """Parse A123G or 123A>G relative to 1-based supplied DNA coordinates.
+
+    A c. prefix is accepted as simplified input notation; HGVS transcript
+    mapping is NOT inferred and an accession is not resolved.
     """
     if not isinstance(mutation, str):
         raise ValueError("Mutation must be a string.")
@@ -54,7 +63,7 @@ def parse_mutation(mutation: str, sequence: str = None):
     else:
         match = re.fullmatch(r"([1-9]\d*)([ACGT])>([ACGT])", value)
         if not match:
-            raise ValueError("Use G123A or 123G>A, with position relative to supplied sequence.")
+            raise ValueError("Use G123A or 123G>A in supplied-sequence coordinates.")
         position, ref, alt = match.groups()
     if ref == alt:
         raise ValueError("Reference and alternate alleles must differ.")
@@ -71,7 +80,7 @@ def parse_mutation(mutation: str, sequence: str = None):
 
 
 def apply_mutation(sequence: str, position: int, ref: str, alt: str):
-    """Return WT and single-nucleotide mutant sequences (position is 0-based)."""
+    """Return WT and mutant DNA for an explicitly validated single substitution."""
     if not isinstance(position, int) or position < 0 or position >= len(sequence):
         raise ValueError("Mutation position is outside the supplied sequence.")
     ref, alt = ref.upper(), alt.upper()

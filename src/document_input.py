@@ -1,11 +1,14 @@
 """Extract candidate DNA strings from user-uploaded files without guessing coordinates."""
 from io import BytesIO
+from zipfile import ZipFile, BadZipFile
 from pathlib import Path
 import re
 from .sequence import load_sequence
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MIN_CANDIDATE_BP = 60
+MAX_UNCOMPRESSED_DOCX_BYTES = 30 * 1024 * 1024
+MAX_EXTRACTED_TEXT_CHARS = 2_000_000
 FORMATS = [".fasta", ".fa", ".fna", ".txt", ".docx", ".pdf"]
 
 
@@ -16,6 +19,14 @@ def _extract_text(filename, data):
     if not isinstance(data, bytes) or not data or len(data) > MAX_UPLOAD_BYTES:
         raise ValueError("File must be nonempty and at most 10 MB.")
     if suffix == ".docx":
+        # DOCX is a ZIP: refuse compressed archives with oversized expansions.
+        try:
+            with ZipFile(BytesIO(data)) as archive:
+                members = archive.infolist()
+                if len(members) > 3000 or sum(m.file_size for m in members) > MAX_UNCOMPRESSED_DOCX_BYTES:
+                    raise ValueError("DOCX archive exceeds extracted-size or entry-count limits.")
+        except BadZipFile as exc:
+            raise ValueError("Not a valid DOCX document.") from exc
         from docx import Document
         document = Document(BytesIO(data))
         lines = [p.text for p in document.paragraphs]
@@ -23,18 +34,32 @@ def _extract_text(filename, data):
             for row in table.rows:
                 for cell in row.cells:
                     lines.append(cell.text)
-        return "\n".join(lines)
+        output = "\n".join(lines)
+        if len(output) > MAX_EXTRACTED_TEXT_CHARS:
+            raise ValueError("Extracted DOCX text exceeds the analysis limit.")
+        return output
     if suffix == ".pdf":
         from pypdf import PdfReader
         pdf = PdfReader(BytesIO(data), strict=False)
         if len(pdf.pages) > 200:
             raise ValueError("PDF exceeds 200 pages; please extract the relevant DNA sequence.")
-        content = "\n".join((page.extract_text() or "") for page in pdf.pages)
+        paragraphs = []
+        total_chars = 0
+        for page in pdf.pages:
+            extracted = page.extract_text() or ""
+            total_chars += len(extracted)
+            if total_chars > MAX_EXTRACTED_TEXT_CHARS:
+                raise ValueError("Extracted PDF text exceeds the analysis limit.")
+            paragraphs.append(extracted)
+        content = "\n".join(paragraphs)
         if not content.strip():
             raise ValueError("No selectable text found in PDF. Scanned documents require OCR before upload.")
         return content
     try:
-        return data.decode("utf-8-sig")
+        content = data.decode("utf-8-sig")
+        if len(content) > MAX_EXTRACTED_TEXT_CHARS:
+            raise ValueError("Extracted text exceeds the analysis limit.")
+        return content
     except UnicodeDecodeError as exc:
         raise ValueError("Text sequence file must use UTF-8 encoding.") from exc
 

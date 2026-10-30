@@ -1,32 +1,34 @@
-# Virtual environment
+# Virtual environments and caches
 venv/
 .venv/
 env/
-
-# Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-
-# Output files
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+# Local output (do not commit research sequences or results)
 output/
+results/
+uploads/
 *.png
-*.md
-!README.md
-
-# IDE
+# Secrets and application-local configuration
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+*.pem
+*.key
+*.p12
+*.pfx
+# Local editor / OS
+.DS_Store
+Thumbs.db
 .idea/
 .vscode/
 *.swp
 *.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Distribution
-dist/
-build/
-*.egg-info/
+# Documentation and other Markdown files are allowed.
