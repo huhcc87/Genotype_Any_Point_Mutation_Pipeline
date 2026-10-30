@@ -5,7 +5,7 @@ This research module is provided on the feature branch `feature/gene-transcript-
 ## Workflow
 
 1. Under **Input source**, select **Search gene / transcript / exon / codon**.
-2. Enter a human gene symbol such as **MSH3**, or an Ensembl stable **ENSG** identifier; press **Find gene and transcripts**.
+2. Enter a human gene symbol or an Ensembl stable **ENSG** identifier; press **Find gene and transcripts**.
 3. Select the protein-coding **ENST** transcript. The app displays accession, version (if returned), coding protein length and exon count. Codon numbering can differ between transcripts.
 4. Press **Load CDS and exon/codon map**. Select a coding exon. The table lists codon numbers, the three-base WT codon, amino acid, CDS base positions and genomic coordinates. If a codon crosses an exon junction, it is flagged.
 5. Select one codon; then select a **single-base mutant codon** and review the predicted amino-acid effect.
@@ -22,11 +22,9 @@ This research module is provided on the feature branch `feature/gene-transcript-
 - Ensembl uses public gene annotations. Uploaded reference sequences are not transmitted by this module.
 - Reference API failure, inconsistent coding sequence lengths and a reference-base mismatch must stop analysis rather than silently guess.
 
-### Example context: MSH3 p.E413K
+### General example
 
-For p.E413K, the expected coding change is GAG (Glu/E) → AAG (Lys/K) if that codon occurs at the intended coding position in the **selected** transcript. Select the transcript first, choose codon 413, and check that the displayed reference codon is `GAG` before choosing `AAG`. The app must not assume p.E413K is the same variant across every MSH3 isoform.
-
-The previous 322-bp local MSH3 example remains available independently. It detects local `G219A` from `[GAG]` → `AAG`, which does not itself validate the relationship to transcript `c.1237G>A`.
+Select a protein-coding transcript and an exon, then choose a codon from that transcript. The app shows the reference codon and possible single-nucleotide substitutions. No particular gene or variant is preselected.
 
 ## Source and scientific method
 
