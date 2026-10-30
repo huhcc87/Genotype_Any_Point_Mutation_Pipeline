@@ -2,7 +2,7 @@
 
 **Locally run, research-use Streamlit application** for sequence upload → primer design → ranked restriction enzymes → predicted genotype bands and gel → complete downloadable reports.
 
-## Start on Mac: copy ONE code block into Terminal
+## Start on macOS: copy ONE code block into Terminal
 
 **Requirements:** Mac with internet access, Git, and either Python 3.11 or Homebrew. This command creates an independent installation at `~/Genotype_Pipeline_App`; it **does not modify** an existing research folder on an external drive. It checks for local changes before updating. The launcher installs dependencies, runs tests, and starts Streamlit bound only to this Mac.
 
@@ -10,7 +10,7 @@
 (
   set -eu
   APP_DIR="$HOME/Genotype_Pipeline_App"
-  BRANCH="feature/streamlit-validated-pcr-rflp"
+  BRANCH="main"
   REPO="https://github.com/huhcc87/Genotype_Any_Point_Mutation_Pipeline.git"
 
   if ! command -v git >/dev/null 2>&1; then
@@ -38,6 +38,43 @@
 ```
 
 If both Python 3.11 and Homebrew are unavailable, the launcher explains how to install Python 3.11 from [python.org](https://www.python.org/downloads/macos/) and then rerun the same command. If Git is absent, install it from [git-scm.com](https://git-scm.com/downloads/mac). The browser's **Local URL** is printed by Streamlit, typically `http://localhost:8501` (or `8502`). Keep Terminal open; press Control+C to stop.
+
+## Start on Windows: copy ONE code block into PowerShell
+
+**Requirements:** Windows 10/11, [Git for Windows](https://git-scm.com/downloads/win), and [Python 3.11](https://www.python.org/downloads/windows/) with the Python `py` launcher installed. Install these prerequisites once if needed. Then open **Windows PowerShell** (not Command Prompt), copy the entire block, paste, and press Enter. The command creates a separate folder under your user profile, safely updates a clean checkout, installs all Python packages, runs tests, and launches Streamlit for local access only.
+
+```powershell
+$ErrorActionPreference = "Stop"
+$appDir = Join-Path $HOME "Genotype_Pipeline_App"
+$repo = "https://github.com/huhcc87/Genotype_Any_Point_Mutation_Pipeline.git"
+
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    throw "Git is missing. Install it from https://git-scm.com/downloads/win, then rerun."
+}
+if (Test-Path -LiteralPath (Join-Path $appDir ".git")) {
+    $changes = & git -C $appDir status --porcelain
+    if ($LASTEXITCODE -ne 0) { throw "Could not check the existing repository." }
+    if ($changes) { throw "There are local changes in $appDir. Preserve them before updating." }
+    & git -C $appDir fetch origin main
+    if ($LASTEXITCODE -ne 0) { throw "Git fetch failed." }
+    & git -C $appDir switch main
+    if ($LASTEXITCODE -ne 0) { throw "Could not switch to main." }
+    & git -C $appDir pull --ff-only origin main
+    if ($LASTEXITCODE -ne 0) { throw "Git fast-forward update failed." }
+} elseif (Test-Path -LiteralPath $appDir) {
+    throw "Folder already exists and is not a Git clone: $appDir. No files were changed."
+} else {
+    & git clone --branch main --single-branch $repo $appDir
+    if ($LASTEXITCODE -ne 0) { throw "Could not clone the repository." }
+}
+
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $appDir "scripts\start_local_windows.ps1")
+if ($LASTEXITCODE -ne 0) { throw "Setup or application run failed; read the error above." }
+```
+
+The process-scoped execution-policy setting is used only to run the checked-out launcher; it does **not** permanently change Windows security settings. Review the public launcher source before executing it. After startup, open the **Local URL** printed by Streamlit (usually `http://localhost:8501`). Keep PowerShell open; press **Ctrl+C** to stop. Your input sequences remain in the local app process rather than being sent to GitHub.
+
+[Detailed Windows/macOS setup and dependencies](docs/INSTALLATION.md) · [Windows launcher source](scripts/start_local_windows.ps1)
 
 **Further help:** [Complete installation / all dependency versions](docs/INSTALLATION.md) · [Step-by-step user guide](docs/USER_GUIDE.md) · [Troubleshooting](docs/TROUBLESHOOTING.md).
 
@@ -72,6 +109,6 @@ In Streamlit's sidebar, choose **Try example** → **Analyze example**. A TTN fr
 - [Installation and dependency list](docs/INSTALLATION.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Automated software tests](https://github.com/huhcc87/Genotype_Any_Point_Mutation_Pipeline/actions)
-- [Draft feature pull request](https://github.com/huhcc87/Genotype_Any_Point_Mutation_Pipeline/pull/1)
+- [Merged Streamlit development pull request](https://github.com/huhcc87/Genotype_Any_Point_Mutation_Pipeline/pull/1)
 
-The interactive application is on `feature/streamlit-validated-pcr-rflp` until reviewed and merged into `main`.
+The interactive application is available from the default `main` branch.
