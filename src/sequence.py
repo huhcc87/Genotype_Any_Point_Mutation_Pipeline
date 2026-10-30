@@ -21,6 +21,13 @@ def load_sequence(seq_input: str) -> str:
     if len(source) > MAX_LENGTH * 2 + 4096:
         raise ValueError("Input text exceeds the supported size limit.")
     if source.startswith(">"):
+        first_header = source.splitlines()[0][1:].strip()
+        if re.fullmatch(r"[ACGTacgt]{60,}", first_header):
+            raise ValueError(
+                "The FASTA header appears to contain DNA bases. "
+                "Use >reference_name on the first line and put DNA on the next lines, "
+                "or remove the initial > when pasting raw DNA."
+            )
         records = list(SeqIO.parse(StringIO(source), "fasta"))
         if len(records) != 1:
             raise ValueError("FASTA input must contain exactly one record.")
