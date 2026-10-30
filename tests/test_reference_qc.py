@@ -10,7 +10,7 @@ def test_forward_coordinate_mapping():
 
 def test_reverse_strand_coordinate_mapping():
     # Genomic plus strand A at position 102 corresponds to T on reverse-complement input.
-    result = map_genomic_snv("ATG", "g.102A>G", "NC_000001.11", 100, "-", "GRCh38")
+    result = map_genomic_snv("TTG", "g.102A>G", "NC_000001.11", 100, "-", "GRCh38")
     assert result["local_mutation"] == "T1C"
 
 def test_mismatch_rejected():
