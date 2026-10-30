@@ -39,76 +39,144 @@ _opener = build_opener(HTTPSHandler(), _NoRedirect())
 
 
 def _get_json(resource, params=None):
-    """Fixed-host HTTPS GET; no user-supplied URL, no redirects, bounded response."""
+    """Bounded Ensembl HTTPS request with short retries for transient failures."""
+    import time
     if not resource.startswith("/") or "//" in resource or ".." in resource:
         raise ValueError("Invalid Ensembl resource path.")
     uri = ENSEMBL + resource
     if params:
         uri += "?" + urlencode(params)
-    request = Request(uri, headers={"Accept": "application/json", "User-Agent": "Genotype-PCR-RFLP-research/0.3"})
-    try:
-        with _opener.open(request, timeout=12) as response:
-            data = response.read(MAX_RESPONSE + 1)
-            if len(data) > MAX_RESPONSE:
-                raise ValueError("Ensembl response exceeds supported size.")
-            return json.loads(data.decode("utf-8"))
-    except HTTPError as exc:
-        if exc.code == 404:
-            raise ValueError("Gene/transcript/sequence was not found in Ensembl.") from exc
-        raise ValueError(f"Ensembl returned HTTP {exc.code}. Please retry later.") from exc
-    except (TimeoutError, URLError, OSError) as exc:
-        raise ValueError("Ensembl is unavailable or the request timed out. Internet access is required.") from exc
-    except (UnicodeError, json.JSONDecodeError) as exc:
-        raise ValueError("Ensembl returned an unreadable reference response.") from exc
+    request = Request(uri, headers={
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "Genotype-PCR-RFLP-research/0.4",
+    })
+    last_error = None
+    for attempt in range(2):
+        try:
+            with _opener.open(request, timeout=16) as response:
+                data = response.read(MAX_RESPONSE + 1)
+                if len(data) > MAX_RESPONSE:
+                    raise ValueError("Ensembl response too large; choose a more specific transcript.")
+                return json.loads(data.decode("utf-8"))
+        except HTTPError as exc:
+            if exc.code == 404:
+                raise ValueError("Gene, transcript or reference sequence was not found in Ensembl.") from exc
+            if exc.code in (429, 500, 502, 503, 504) and attempt == 0:
+                last_error = f"HTTP {exc.code}"
+                time.sleep(1)
+                continue
+            raise ValueError(
+                f"Ensembl returned HTTP {exc.code}. Check the Ensembl service status, or retry later."
+            ) from exc
+        except (TimeoutError, URLError, OSError) as exc:
+            last_error = str(getattr(exc, "reason", exc))[:160]
+            if attempt == 0:
+                time.sleep(1)
+                continue
+            raise ValueError(
+                "Cannot reach Ensembl REST. Check internet, VPN/proxy/firewall or service availability. "
+                f"Network detail: {last_error}. You may still use Paste sequence or WT/Mutant input offline."
+            ) from exc
+        except (UnicodeError, json.JSONDecodeError) as exc:
+            raise ValueError("Ensembl returned an unreadable reference response.") from exc
+    raise ValueError(f"Reference service unavailable: {last_error or 'unknown reason'}")
 
 
 def search_gene(identifier):
-    """Lookup one human gene by symbol or Ensembl gene ID."""
+    """Fast lookup: one gene record plus lightweight coding transcript features.
+
+    Do not use expand=1 on a gene: very large genes such as TTN can time out
+    or return multi-megabyte nested exon data.
+    """
     name = str(identifier).strip()
     if GENE_ID_RE.fullmatch(name):
         endpoint = "/lookup/id/" + quote(name.upper(), safe="")
     elif SYMBOL_RE.fullmatch(name):
         endpoint = "/lookup/symbol/homo_sapiens/" + quote(name, safe="")
     else:
-        raise ValueError("Enter a human gene symbol or Ensembl gene ID (ENSG...).")
-    data = _get_json(endpoint, {"expand": 1})
-    if data.get("object_type") != "Gene" or data.get("species") != "homo_sapiens":
-        raise ValueError("The requested identifier did not resolve to a human gene.")
-    if data.get("assembly_name") not in (None, "GRCh38"):
-        raise ValueError("This workflow requires GRCh38 reference annotation.")
-    txs = data.get("Transcript", [])
-    if not isinstance(txs, list) or len(txs) > MAX_GENE_TRANSCRIPTS:
-        raise ValueError("The gene has too many transcripts for this interactive lookup.")
+        raise ValueError("Enter a human gene symbol or Ensembl ENSG gene ID.")
+    gene = _get_json(endpoint)
+    if not isinstance(gene, dict) or gene.get("object_type") != "Gene" or gene.get("species") != "homo_sapiens":
+        raise ValueError("Identifier did not resolve to a human gene.")
+    if gene.get("assembly_name") not in (None, "GRCh38"):
+        raise ValueError("Expected the GRCh38 human reference.")
+    gene_id = str(gene.get("id", ""))
+    if not GENE_ID_RE.fullmatch(gene_id):
+        raise ValueError("Ensembl did not return a valid human gene ID.")
+
+    features = _get_json(
+        "/overlap/id/" + quote(gene_id, safe=""),
+        {"feature": "transcript", "biotype": "protein_coding"},
+    )
+    if not isinstance(features, list) or len(features) > MAX_GENE_TRANSCRIPTS:
+        raise ValueError("Ensembl transcript response is invalid or exceeds the supported limit.")
+    canonical = str(gene.get("canonical_transcript") or "").split(".")[0]
     transcripts = []
-    for t in txs:
-        if not t.get("Translation") or t.get("biotype") != "protein_coding":
+    for t in features:
+        if not isinstance(t, dict):
             continue
-        if not TX_ID_RE.fullmatch(str(t.get("id", ""))):
+        # overlap/id returns overlaps from neighbouring genes too.
+        parent = str(t.get("Parent") or t.get("gene_id") or "")
+        if parent != gene_id:
             continue
-        if not t.get("Exon") or str(t.get("seq_region_name", "")).upper() == "MT":
+        tid = str(t.get("id", ""))
+        if not TX_ID_RE.fullmatch(tid):
+            continue
+        if t.get("biotype") != "protein_coding":
+            continue
+        if str(t.get("seq_region_name")) == "MT":
             continue
         transcripts.append({
-            "id": t["id"], "version": t.get("version"), "label": t.get("display_name", t["id"]),
-            "is_canonical": bool(t.get("is_canonical", 0)),
-            "coding_length_aa": t.get("Translation", {}).get("length"),
-            "exon_count": len(t["Exon"]),
-            "strand": t["strand"],
-            "seq_region_name": t["seq_region_name"],
-            "assembly_name": t.get("assembly_name", data.get("assembly_name")),
-            "annotation": t,
+            "id": tid,
+            "version": t.get("version"),
+            "label": t.get("external_name") or t.get("display_name") or tid,
+            "is_canonical": tid == canonical,
+            "coding_length_aa": None,
+            "exon_count": None,
+            "strand": t.get("strand"),
+            "seq_region_name": t.get("seq_region_name"),
+            "assembly_name": t.get("assembly_name", "GRCh38"),
+            # Detail is intentionally loaded only after transcript selection.
+            "annotation": None,
         })
-    transcripts.sort(key=lambda t: (not t["is_canonical"], -(t["coding_length_aa"] or 0), t["id"]))
+    transcripts.sort(key=lambda t: (not t["is_canonical"], t["id"]))
     if not transcripts:
-        raise ValueError("No protein-coding transcript with exon and translation annotations was found.")
+        raise ValueError(
+            "No matching protein-coding transcripts were returned. "
+            "Check the gene identifier or try another reference sequence."
+        )
     return {
-        "gene_id": data["id"],
-        "gene_symbol": data.get("display_name", name),
-        "assembly": "GRCh38 (Ensembl default reference)",
-        "chromosome": data.get("seq_region_name"),
+        "gene_id": gene_id,
+        "gene_symbol": gene.get("display_name", name),
+        "assembly": "GRCh38",
+        "chromosome": gene.get("seq_region_name"),
         "transcripts": transcripts,
         "reference_provider": "Ensembl REST",
         "reference_url": ENSEMBL + endpoint,
+        "query": name,
     }
+
+
+def get_transcript_details(transcript_id, expected_gene_id=None):
+    """Expand one ENST only; validate gene membership and coding annotations."""
+    tid = str(transcript_id).strip().upper()
+    if not TX_ID_RE.fullmatch(tid):
+        raise ValueError("Select a valid ENST transcript ID.")
+    transcript = _get_json("/lookup/id/" + quote(tid, safe=""), {"expand": 1})
+    if not isinstance(transcript, dict) or transcript.get("object_type") != "Transcript":
+        raise ValueError("Ensembl returned no transcript detail.")
+    if transcript.get("id") != tid or transcript.get("biotype") != "protein_coding":
+        raise ValueError("The selected transcript is not protein coding.")
+    if expected_gene_id and transcript.get("Parent") != expected_gene_id:
+        raise ValueError("Selected transcript does not belong to the requested gene.")
+    if transcript.get("assembly_name") not in (None, "GRCh38"):
+        raise ValueError("Transcript does not use GRCh38.")
+    if not transcript.get("Translation") or not transcript.get("Exon"):
+        raise ValueError("This transcript has no usable CDS translation or exon annotations.")
+    if transcript.get("seq_region_name") == "MT":
+        raise ValueError("Mitochondrial transcripts require a separate codon table and are unsupported.")
+    return transcript
 
 
 def get_cds(transcript_id):
