@@ -1,6 +1,7 @@
 """Guided PCR-RFLP design UI: document upload, ranked enzymes, gel, complete reports."""
 from pathlib import Path
 import tempfile
+import hashlib
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
@@ -62,6 +63,8 @@ elif mode=="Upload file":
     upload=st.file_uploader("Upload sequence or document",type=["fa","fasta","fna","txt","docx","pdf"])
     if upload:
         try:
+            if upload.size > 10 * 1024 * 1024:
+                raise ValueError("Upload exceeds the 10 MB limit.")
             candidates,alerts=extract_sequences(upload.name,upload.getvalue())
             for notice in alerts:
                 st.info(notice)
@@ -82,6 +85,18 @@ else:
         except ValueError as exc:
             st.error(str(exc))
 
+# Never display a previous result for a different sequence or variant.
+current_signature = (
+    hashlib.sha256(sequence.encode("ascii")).hexdigest() if sequence else None,
+    mutation.strip().upper(),
+    name,
+    max_enzymes,
+)
+if st.session_state.get("input_signature") != current_signature:
+    st.session_state.pop("result", None)
+    st.session_state.pop("sequence", None)
+    st.session_state.pop("export", None)
+
 if st.button("Analyze example" if mode=="Try example" else "Analyze sequence",
              type="primary",disabled=sequence is None):
     try:
@@ -89,6 +104,7 @@ if st.button("Analyze example" if mode=="Try example" else "Analyze sequence",
         with st.spinner("Designing primers and screening enzyme patterns..."):
             result=analyze_assay(sequence,mutation,assay_name,max_enzymes)
             result["enzymes"]=rank_enzymes(result["enzymes"])
+        st.session_state["input_signature"]=current_signature
         st.session_state["result"]=result
         st.session_state["sequence"]=sequence
         st.session_state.pop("export",None)
