@@ -10,6 +10,7 @@ from src.document_input import extract_sequences
 from src.sequence import load_sequence
 from src.reference_mapping import map_genomic_snv
 from src.variant_input import parse_marked_reference, compare_wild_type_mutant
+from src.gene_lookup import search_gene, get_cds, codon_table, alternative_codons, fetch_genomic_assay
 from src.ranking import rank_enzymes
 from src.ladders import LADDERS,ladder_notes
 from src.visualization import render_ladder_gel,render_sequence_figure,sequence_markup
@@ -43,7 +44,7 @@ highlighted DNA sequence and input FASTA. Test in the laboratory before use.
 """)
 with st.sidebar:
     st.header("Assay setup")
-    mode=st.radio("Input source",["Try example","MSH3 E413K example","Upload file","Paste sequence","WT marked motif → mutant motif","Complete WT and mutant sequences"])
+    mode=st.radio("Input source",["Try example","Search gene / transcript / exon / codon","MSH3 E413K example","Upload file","Paste sequence","WT marked motif → mutant motif","Complete WT and mutant sequences"])
     name=st.text_input("Assay name","Variant")
     mutation=st.text_input("Mutation (local sequence position)","C101T")
     max_enzymes=st.slider("Maximum restriction enzymes",3,50,20)
@@ -66,7 +67,68 @@ with st.sidebar:
 sequence=None
 variant_metadata=None
 input_error=None
-if mode=="MSH3 E413K example":
+if mode=="Search gene / transcript / exon / codon":
+    st.subheader("Search human gene → transcript → exon → codon")
+    st.caption("Ensembl REST, human GRCh38. Internet required. Reference mapping is transcript-specific.")
+    identifier=st.text_input("Human gene symbol or Ensembl gene ID","MSH3")
+    if st.button("Find gene and transcripts"):
+        try:
+            with st.spinner("Retrieving gene annotation from Ensembl..."):
+                found=search_gene(identifier)
+            st.session_state["lookup_gene"]=found
+            st.session_state.pop("lookup_cds",None)
+            st.session_state.pop("lookup_assay",None)
+        except ValueError as exc:
+            st.error(str(exc))
+    found=st.session_state.get("lookup_gene")
+    if found:
+        st.success(f"{found['gene_symbol']} | {found['gene_id']} | {found['assembly']}")
+        txs=found["transcripts"]
+        tx_index=st.selectbox("Choose protein-coding transcript",list(range(len(txs))),
+            format_func=lambda i: f"{txs[i]['id']}.{txs[i]['version'] or '?'} | {txs[i]['label']} | {txs[i]['exon_count']} exons | {txs[i]['coding_length_aa']} aa" + (" | canonical" if txs[i]["is_canonical"] else ""),
+            key="lookup_transcript")
+        tx=txs[tx_index]
+        if st.button("Load CDS and exon/codon map"):
+            try:
+                with st.spinner("Mapping coding bases onto genomic exon coordinates..."):
+                    cds=get_cds(tx["id"])
+                    rows=codon_table(tx["annotation"],cds)
+                st.session_state["lookup_cds"]={"transcript_id":tx["id"],"cds":cds,"rows":rows}
+                st.session_state.pop("lookup_assay",None)
+            except ValueError as exc:
+                st.error(str(exc))
+        loaded=st.session_state.get("lookup_cds")
+        if loaded and loaded["transcript_id"]==tx["id"]:
+            rows=loaded["rows"]
+            st.caption(f"Validated CDS: {len(loaded['cds'])} bases, {len(rows)} codons. Exon numbering follows the selected transcript.")
+            exons=sorted({ex for row in rows for ex in row["exon_numbers"]})
+            exon_num=st.selectbox("Select coding exon",exons)
+            exon_rows=[r for r in rows if exon_num in r["exon_numbers"]]
+            st.dataframe(pd.DataFrame(exon_rows)[["codon_number","reference_codon","reference_amino_acid","exon_numbers","cds_positions_1based","genomic_positions","splice_junction_codon"]],
+                         use_container_width=True,hide_index=True)
+            codon_number=st.selectbox("Choose coding codon / amino-acid number",
+                                      [r["codon_number"] for r in exon_rows],key="lookup_codon")
+            codon_row=next(r for r in exon_rows if r["codon_number"]==codon_number)
+            variants=alternative_codons(codon_row["reference_codon"])
+            alt_index=st.selectbox("Choose one-base mutant codon",list(range(len(variants))),
+                format_func=lambda i: f"{codon_row['reference_codon']} → {variants[i]['mutant_codon']} | {codon_row['reference_amino_acid']}{codon_number}{variants[i]['mutant_amino_acid']}",
+                key="lookup_alt")
+            alternative=variants[alt_index]
+            if st.button("Load reference genomic DNA for selected variant"):
+                try:
+                    with st.spinner("Retrieving reference flank and checking allele orientation..."):
+                        template=fetch_genomic_assay(tx["annotation"],loaded["cds"],codon_number,alternative["mutant_codon"])
+                    st.session_state["lookup_assay"]=template
+                except ValueError as exc:
+                    st.error(str(exc))
+            template=st.session_state.get("lookup_assay")
+            if template and template["metadata"]["transcript_id"]==tx["id"] and template["metadata"]["codon_number"]==codon_number and template["metadata"]["alternate_codon"]==alternative["mutant_codon"]:
+                sequence=template["sequence"]
+                derived_mutation=template["mutation"]
+                variant_metadata={"variant":derived_mutation, "source":"Ensembl gene lookup",**template["metadata"]}
+                st.success(f"Ready: {derived_mutation}, {len(sequence)} bp genomic flank, {template['metadata']['reference_codon']}→{template['metadata']['alternate_codon']}.")
+                st.warning("This creates a reference-based candidate assay, not a genotype call or genome-wide primer specificity validation.")
+elif mode=="MSH3 E413K example":
     st.subheader("MSH3 exon 8 E413K — marked WT codon demonstration")
     marked_path=Path(__file__).resolve().parent/"examples"/"MSH3_exon8_E413K_WT_marked.txt"
     st.caption("Input is the user-provided 322 bp fragment. [GAG]→AAG maps to local G219A; transcript c.1237G>A not independently verified.")
@@ -165,7 +227,7 @@ if st.button("Analyze example" if mode=="Try example" else "Analyze sequence",
             result=analyze_assay(sequence,local_mutation,assay_name,max_enzymes)
             if variant_metadata:
                 result["variant_input"] = variant_metadata
-                result["warnings"].append("WT/mutant comparison verifies a single local substitution, not the reference transcript or protein annotation.")
+                result["warnings"].append("Reference/variant input supplies a predicted substitution; no experimental genotype call is made.")
             if metadata:
                 result["reference_mapping"] = metadata
                 result["warnings"].append(metadata["mapping_warning"])
