@@ -67,7 +67,7 @@ with st.sidebar:
         st.caption("Enter g.123C>T or NC_000001.11:g.123C>T above. The interval and accession are not independently fetched.")
     st.divider()
     st.caption("Accepted: .fa, .fasta, .fna, .txt, .docx, .pdf (10 MB maximum).")
-    st.caption("For WT marked or paired-sequence modes, the app determines the local substitution automatically; the Mutation field is ignored.")
+    st.caption("For gene search, WT marked, and paired-sequence modes, the mutation is derived from the selected reference/codon; the sidebar Mutation field is ignored.")
     st.caption("Do not upload identifiable patient data to any publicly hosted application.")
 
 sequence=None
@@ -151,7 +151,7 @@ if mode=="Search gene / transcript / exon / codon":
                 st.session_state["lookup_row_scope"]=(tx["id"], exon_choice)
             displayed=pd.DataFrame(exon_rows)[["codon_number","reference_codon","reference_amino_acid","exon_numbers","cds_positions_1based","genomic_positions","splice_junction_codon"]].reset_index(drop=True)
             selected_event=st.dataframe(displayed,use_container_width=True,hide_index=True,height=380,
-                                        selection_mode="single-row",on_select="rerun",key="lookup_codon_table")
+                                        selection_mode="single-row",on_select="rerun",key=f"lookup_codon_table_{tx['id']}_{exon_choice}")
             selected_rows=selected_event.selection.rows
             if selected_rows:
                 row_number=int(exon_rows[selected_rows[0]]["codon_number"])
