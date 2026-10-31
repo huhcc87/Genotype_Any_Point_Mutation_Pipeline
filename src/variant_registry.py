@@ -146,8 +146,8 @@ def curated_public_reference(variant):
             "rsid":"rs11568350",
             "clinvar_reference":"https://www.ncbi.nlm.nih.gov/clinvar/variation/333167/",
             "dbsnp_reference":"https://www.ncbi.nlm.nih.gov/snp/rs11568350",
-            "rflp_literature":"https://patents.google.com/patent/US7718785B2/en",
-            "rflp_note":"PvuII reported in a published assay description; laboratory specificity and performance for your primers are not validated.",
+            "rflp_literature":"https://pmc.ncbi.nlm.nih.gov/articles/PMC3659936/",
+            "rflp_note":"Published PCR-RFLP: PvuII digestion of 392-bp PCR product yielded reference 252+140 bp and Q248H mutant 392 bp; different predicted fragment sizes for newly designed primers are not an error. Verify experimental conditions and specificity.",
             "source_scope":"Curated public reference checkpoint, not a live NCBI query result.",
         }
     return None
