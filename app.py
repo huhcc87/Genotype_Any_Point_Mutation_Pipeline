@@ -14,6 +14,7 @@ from src.gene_lookup import search_gene, get_transcript_details, get_cds, codon_
 from src.ucsc_reference import search_refseq_gene, get_refseq_cds, fetch_refseq_assay
 from src.exon_browser import summarize_coding_exons, filter_codon_rows, lookup_codon
 from src.gene_structure import gene_locus_summary, transcript_structure
+from src.variant_registry import inspect_variant
 from src.ranking import rank_enzymes
 from src.ladders import LADDERS,ladder_notes,recommended_ladders
 from src.visualization import render_ladder_gel,render_sequence_figure,sequence_markup
@@ -144,18 +145,59 @@ if mode=="Search gene / transcript / exon / codon":
             chosen_exon=None if exon_choice=="All coding exons" else int(exon_choice)
             exon_rows=filter_codon_rows(rows,chosen_exon)
             st.caption(f"Showing {len(exon_rows):,} of {len(rows):,} coding codons. A junction codon may appear in two individual exon views.")
-            st.dataframe(pd.DataFrame(exon_rows)[["codon_number","reference_codon","reference_amino_acid","exon_numbers","cds_positions_1based","genomic_positions","splice_junction_codon"]],use_container_width=True,hide_index=True,height=380)
-            codon_number=int(st.number_input("Go directly to coding codon / amino-acid number (1-based across transcript)",
+            if st.session_state.get("lookup_row_scope") != (tx["id"], exon_choice):
+                st.session_state["lookup_row_scope"]=(tx["id"], exon_choice)
+            displayed=pd.DataFrame(exon_rows)[["codon_number","reference_codon","reference_amino_acid","exon_numbers","cds_positions_1based","genomic_positions","splice_junction_codon"]].reset_index(drop=True)
+            selected_event=st.dataframe(displayed,use_container_width=True,hide_index=True,height=380,
+                                        selection_mode="single-row",on_select="rerun",key="lookup_codon_table")
+            selected_rows=selected_event.selection.rows
+            if selected_rows:
+                row_number=int(exon_rows[selected_rows[0]]["codon_number"])
+                if st.session_state.get("lookup_last_selected_row")!=(tx["id"],exon_choice,row_number):
+                    st.session_state["lookup_codon_number"]=row_number
+                    st.session_state["lookup_last_selected_row"]=(tx["id"],exon_choice,row_number)
+                    st.rerun()
+            codon_number=int(st.number_input("Select coding codon / amino-acid number (or click a table row)",
                 min_value=1,max_value=len(rows),value=1,step=1,key="lookup_codon_number"))
             codon_row=lookup_codon(rows,codon_number)
-            st.info(f"Codon {codon_number}: {codon_row['reference_codon']} ({codon_row['reference_amino_acid']}); coding exon(s) {', '.join(map(str,codon_row['exon_numbers']))}." )
+            st.info(f"Selected codon {codon_number}: {codon_row['reference_codon']} → amino acid {codon_row['reference_amino_acid']}, exon(s) {', '.join(map(str,codon_row['exon_numbers']))}.")
             if chosen_exon is not None and chosen_exon not in codon_row["exon_numbers"]:
-                st.caption("The chosen codon is outside the table's exon filter; select All coding exons to view its row.")
+                st.caption("Selected codon is outside this exon filter. Choose All coding exons to display its row.")
             variants=alternative_codons(codon_row["reference_codon"])
             alt_index=st.selectbox("Choose one-base mutant codon",list(range(len(variants))),
                 format_func=lambda i: f"{codon_row['reference_codon']} → {variants[i]['mutant_codon']} | {codon_row['reference_amino_acid']}{codon_number}{variants[i]['mutant_amino_acid']}",
                 key="lookup_alt")
             alternative=variants[alt_index]
+            st.caption("For example, ATG → CTG | M1L means methionine at amino acid 1 is predicted to change to leucine. This is a selected hypothetical substitution, not a sample genotype.")
+            registry_variant_key=(lookup_assembly,tx["id"],codon_number,alternative["mutant_codon"])
+            if st.button("Check selected variant in ClinVar and dbSNP",key="check_registry_variant"):
+                try:
+                    pos=codon_row["genomic_positions"][alternative["codon_base"]-1]
+                    st.session_state["variant_registry_result"]={
+                        "key":registry_variant_key,
+                        "data":inspect_variant(loaded["annotation"]["seq_region_name"],pos,
+                                               alternative["reference_base"],alternative["alternate_base"],
+                                               loaded["annotation"]["strand"],lookup_assembly)
+                    }
+                except ValueError as exc:
+                    st.error(str(exc))
+            registry_result=st.session_state.get("variant_registry_result")
+            if registry_result and registry_result.get("key")==registry_variant_key:
+                data=registry_result["data"]
+                st.markdown("#### ClinVar / dbSNP evidence for this exact genomic substitution")
+                st.write("Genomic HGVS: "+data["variant"]["genomic_hgvs"])
+                st.write("dbSNP status: "+data["dbsnp"]["status"])
+                for rsid in data["dbsnp"].get("rsids",[]):
+                    st.link_button(rsid,"https://www.ncbi.nlm.nih.gov/snp/"+rsid)
+                st.write("ClinVar status: "+data["clinvar"]["status"])
+                for link in data["clinvar"].get("links",[]):
+                    st.link_button("Review ClinVar candidate "+link.rstrip("/").split("/")[-1],link)
+                st.caption(data["dbsnp"].get("note",""))
+                st.caption(data["clinvar"].get("note",""))
+                st.warning(data["novelty_assessment"])
+                st.download_button("Download variant database evidence (JSON)",
+                    __import__("json").dumps(data,indent=2),file_name="variant_registry_evidence.json",
+                    mime="application/json")
             if st.button("Load reference genomic DNA for selected variant"):
                 try:
                     with st.spinner("Retrieving reference flank and checking allele orientation..."):
