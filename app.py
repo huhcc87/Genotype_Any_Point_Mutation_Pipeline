@@ -166,8 +166,9 @@ if mode=="Search gene / transcript / exon / codon":
             variants=alternative_codons(codon_row["reference_codon"])
             alt_index=st.selectbox("Choose one-base mutant codon",list(range(len(variants))),
                 format_func=lambda i: f"{codon_row['reference_codon']} → {variants[i]['mutant_codon']} | {codon_row['reference_amino_acid']}{codon_number}{variants[i]['mutant_amino_acid']}",
-                key="lookup_alt")
+                key=f"lookup_alt_{tx['id']}_{codon_number}")
             alternative=variants[alt_index]
+            st.success(f"Selected reference-based change: {codon_row['reference_codon']} → {alternative['mutant_codon']} | {codon_row['reference_amino_acid']}{codon_number}{alternative['mutant_amino_acid']}")
             st.caption("For example, ATG → CTG | M1L means methionine at amino acid 1 is predicted to change to leucine. This is a selected hypothetical substitution, not a sample genotype.")
             registry_variant_key=(lookup_assembly,tx["id"],codon_number,alternative["mutant_codon"])
             if st.button("Check selected variant in ClinVar and dbSNP",key="check_registry_variant"):
@@ -186,10 +187,16 @@ if mode=="Search gene / transcript / exon / codon":
                 data=registry_result["data"]
                 st.markdown("#### ClinVar / dbSNP evidence for this exact genomic substitution")
                 st.write("Genomic HGVS: "+data["variant"]["genomic_hgvs"])
-                st.write("dbSNP status: "+data["dbsnp"]["status"])
+                if data.get("curated_reference"):
+                    known=data["curated_reference"]
+                    st.success(f"Public reference record: {known['gene']} {known['coding_hgvs']} ({known['protein_short']}) | {known['rsid']}")
+                    st.link_button("Review dbSNP reference",known["dbsnp_reference"])
+                    st.link_button("Review ClinVar reference",known["clinvar_reference"])
+                    st.caption(known["rflp_note"])
+                st.write("dbSNP live-query status: "+data["dbsnp"]["status"])
                 for rsid in data["dbsnp"].get("rsids",[]):
                     st.link_button(rsid,"https://www.ncbi.nlm.nih.gov/snp/"+rsid)
-                st.write("ClinVar status: "+data["clinvar"]["status"])
+                st.write("ClinVar live-query status: "+data["clinvar"]["status"])
                 for link in data["clinvar"].get("links",[]):
                     st.link_button("Review ClinVar candidate "+link.rstrip("/").split("/")[-1],link)
                 st.caption(data["dbsnp"].get("note",""))
@@ -321,6 +328,9 @@ if result:
     m[1].metric("Variant",result["mutation"])
     m[2].metric("Primer pairs",len(result["primers"]))
     m[3].metric("Candidate enzymes",len(result["enzymes"]))
+    meta=result.get("variant_input") or {}
+    if meta.get("reference_codon"):
+        st.info(f"Selected reference change: {meta['transcript_id']} | codon {meta['codon_number']} | {meta['reference_codon']} → {meta['alternate_codon']} | {meta['reference_aa']}{meta['codon_number']}{meta['alternate_aa']} | {meta['assembly']} {meta['genomic_chromosome']}:{meta['genomic_position']}")
     pages=st.tabs(["Primers & highlighted DNA","Restriction enzyme grades",
                    "Virtual gel & ladder","Download complete reports","Limitations"])
     with pages[0]:
@@ -352,6 +362,7 @@ if result:
             top=enzymes[0]
             st.info(f"First computational choice: {top['enzyme']} — grade {top['design_grade']}, "
                     f"{top['priority_score']}/100. This is NOT a validated enzyme-activity ranking.")
+            st.caption("A high computational score does NOT establish a best laboratory enzyme. Published assay validation and manufacturer documentation take precedence.")
             st.caption("Priority favors allele-discriminating, reasonably visible, simple cut patterns; "
                        "methylation sensitivity, star activity, reagent availability and price remain unverified.")
         else:
@@ -363,7 +374,8 @@ if result:
             format_func=lambda i:(f"{enzymes[i]['priority_rank']}. {enzymes[i]['enzyme']} "
                                   f"— grade {enzymes[i]['design_grade']} ({enzymes[i]['priority_score']}/100)"),
             key="enzyme_index") if options else None
-        ladder_options=recommended_ladders(result["enzymes"][0]["fragments_wt"]+result["enzymes"][0]["fragments_mut"]) if result["enzymes"] else list(LADDERS)
+        current_enzyme=enzymes[enzyme_index] if enzyme_index is not None else None
+        ladder_options=recommended_ladders(current_enzyme["fragments_wt"]+current_enzyme["fragments_mut"]) if current_enzyme else list(LADDERS)
         ladder_name=st.selectbox("Choose DNA molecular-weight ladder",ladder_options,key="ladder_name")
         ladder=LADDERS[ladder_name]
         st.caption(f"{ladder['vendor']} | {ladder['catalog']} | "
@@ -393,7 +405,7 @@ if result:
         ix=st.session_state.get("enzyme_index",0)
         selected_enzyme=result["enzymes"][ix] if result["enzymes"] and ix < len(result["enzymes"]) else None
         selected_ladder=st.session_state.get("ladder_name",next(iter(LADDERS)))
-        key=(result["timestamp_utc"],selected_enzyme["enzyme"] if selected_enzyme else "",selected_ladder)
+        key=(result["timestamp_utc"],selected_enzyme["enzyme"] if selected_enzyme else "",selected_ladder, str(result.get("variant_input",{})))
         if st.button("Prepare all reports",key="prepare_reports"):
             try:
                 with st.spinner("Creating all downloadable results..."):
