@@ -9,7 +9,7 @@ def test_forward_reverse_genomic_variant():
     assert minus["genomic_hgvs"]=="NC_000002.12:g.100C>T"
 
 def test_no_match_is_not_called_novel(monkeypatch):
-    monkeypatch.setattr(v,"_fetch_json",lambda host,path,params=None: {"rsids":[]} if "rsids" in path else {"esearchresult":{"count":"0","idlist":[]}})
+    monkeypatch.setattr(v,"_fetch_json",lambda host,path,params=None: {"data":{"rsids":[]}} if "rsids" in path else {"esearchresult":{"count":"0","idlist":[]}})
     result=v.inspect_variant("chr2",123,"C","T",1,"GRCh38")
     assert result["dbsnp"]["status"]=="NOT_FOUND_IN_QUERY"
     assert result["clinvar"]["status"]=="NOT_FOUND_IN_QUERY"
