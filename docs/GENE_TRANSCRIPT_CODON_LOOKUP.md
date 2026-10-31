@@ -35,3 +35,14 @@ Select a protein-coding transcript and an exon, then choose a codon from that tr
 ## Browse all coding exons and codons
 
 After **Load CDS and exon/codon map**, the app now shows an **Overview of every coding exon** with coding-base counts, codon ranges and junction-codon counts. Choose **All coding exons** to display every reference coding codon, or select an individual exon to filter the table. Use **Go directly to coding codon / amino-acid number** to locate any 1-based codon in the entire selected transcript, independent of the exon filter. A codon spanning two exons appears in both filtered exon views but only once in the all-codons table. These are **coding** exons: untranslated exons or noncoding portions of exons are not represented in the codon view.
+
+## Full gene structure and splice junction report
+
+After selecting a transcript and loading its coding sequence, the application now displays two **separate** annotation scopes:
+
+- **Gene-level location:** chromosome, genome assembly, gene identifier, source-provided start/end coordinates and whole-gene genomic span in bp/kb, when available. A gene locus can contain multiple isoforms and should not be inferred from a single transcript. Cytogenetic band appears only if independently provided, rather than guessed from chromosome coordinates.
+- **Transcript-specific structure:** genomic start/end and span, plus/minus strand, all exon and intron counts, spliced transcript length, coding-exon count, coding region length, 5′ and 3′ UTR lengths, total intronic length, coding triplets including any terminal stop codon, and predicted protein amino-acid count excluding a terminal stop codon.
+
+Open **All exons, introns and splice-junction coordinates** to view every exon including UTR regions, every intervening intron, and each theoretical splice donor/acceptor intronic boundary (1-based genomic coordinates). Exon numbers progress in transcript 5′→3′ order, even on a negative-strand gene. Junctions are derived from the exon model; GT/AG motifs have **not** been sequence-verified. Click **Download gene and transcript structure (JSON)** for the complete result.
+
+**Note:** The number of exons in the coding view can differ from the total transcript exon count. In different isoforms, the number and length of exons/introns can change. Predicted coding triplets can include a stop codon that does not encode an amino acid. All values are specific to the selected reference assembly and annotated transcript.
