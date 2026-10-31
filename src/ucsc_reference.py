@@ -73,7 +73,7 @@ def _resolve_gene_locus(symbol, assembly):
     q = "ensembl.gene:" + symbol if _ENSG.fullmatch(symbol) else "symbol:" + symbol
     data = _read_json(_MYGENE, "/v3/query", {
         "q": q, "species": "9606", "size": 10,
-        "fields": "symbol,taxid,ensembl,genomic_pos,genomic_pos_hg19"
+        "fields": "symbol,taxid,ensembl,genomic_pos,genomic_pos_hg19,map_location"
     })
     for hit in data.get("hits", []):
         if not isinstance(hit, dict) or hit.get("taxid") != 9606:
@@ -99,7 +99,8 @@ def _resolve_gene_locus(symbol, assembly):
             if _CHROM.fullmatch(chrom) and 1 <= start <= end and end-start+1 <= _MAX_SPAN:
                 return {"gene_symbol": hit.get("symbol",symbol),
                         "chromosome": chrom, "start_1based": start,
-                        "end_1based": end, "locus_source": "MyGene.info"}
+                        "end_1based": end, "locus_source": "MyGene.info",
+                        "cytoband": str(hit.get("map_location") or "").strip() or None}
     raise ValueError("No exact human gene locus found for this assembly in MyGene.info.")
 
 
@@ -200,6 +201,7 @@ def search_refseq_gene(gene_symbol, assembly="GRCh38"):
         "gene_id": name if _ENSG.fullmatch(name) else locus["gene_symbol"],
         "gene_locus":{"start_1based":locus["start_1based"],"end_1based":locus["end_1based"]},
         "gene_locus_source":"MyGene.info genomic position (selected assembly)",
+        "cytoband":locus.get("cytoband"),
         "gene_symbol": locus["gene_symbol"],
         "assembly":assembly,"chromosome":locus["chromosome"],
         "transcripts":transcripts,
