@@ -17,6 +17,7 @@ from src.ucsc_reference import search_refseq_gene, get_refseq_cds, fetch_refseq_
 from src.exon_browser import summarize_coding_exons, filter_codon_rows, lookup_codon
 from src.gene_structure import gene_locus_summary, transcript_structure
 from src.variant_registry import inspect_variant
+from src.hgvs_validation import validate_batch, validate_coding_snv
 from src.ranking import rank_enzymes
 from src.ladders import LADDERS,ladder_notes,recommended_ladders
 from src.visualization import render_ladder_gel,render_sequence_figure,sequence_markup
@@ -138,6 +139,28 @@ if mode=="Search gene / transcript / exon / codon":
                 __import__("json").dumps({"gene":gene_info,"structure":structure},indent=2),
                 file_name="gene_structure_annotation.json",mime="application/json")
             st.caption(f"Validated CDS: {len(loaded['cds'])} bases, {len(rows)} codons. Exon numbering follows the selected transcript.")
+            with st.expander("Find or batch-check coding HGVS variants (c. and p.)", expanded=False):
+                st.caption("Use the selected transcript accession. Example format: c.1237G>A,p.E413K. Unmatched coordinates and amino-acid changes are explicitly flagged.")
+                single_hgvs=st.text_input("Coding DNA variant (HGVS)",placeholder="c.1237G>A")
+                single_protein=st.text_input("Expected protein change (optional)",placeholder="p.E413K")
+                if single_hgvs.strip():
+                    try:
+                        verified=validate_coding_snv(loaded["annotation"],loaded["cds"],single_hgvs,single_protein or None)
+                        st.success(f"{verified['coding_hgvs']} | {verified['protein_hgvs']} | codon {verified['codon_number']} | exon(s) {verified['exon_numbers']} | chr{verified['chromosome']}:{verified['genomic_position']}{verified['genomic_ref']}>{verified['genomic_alt']}")
+                        if st.button("Use verified codon for assay"):
+                            st.session_state["lookup_codon_number"]=int(verified["codon_number"])
+                            st.session_state["lookup_target_mutant_codon"]=verified["alternate_codon"]
+                            st.rerun()
+                    except ValueError as exc:
+                        st.error(str(exc))
+                batch_text=st.text_area("Batch verification: one c. variant per line, optionally followed by comma and p. change",height=110,placeholder="c.1237G>A,p.E413K\\nc.1397G>A,p.S466N")
+                if st.button("Verify all submitted variants"):
+                    batch=validate_batch(loaded["annotation"],loaded["cds"],batch_text)
+                    st.session_state["hgvs_batch"]=batch
+                if st.session_state.get("hgvs_batch"):
+                    batch=st.session_state["hgvs_batch"]
+                    st.dataframe(pd.DataFrame(batch),hide_index=True,use_container_width=True)
+                    st.download_button("Download HGVS reference-check table (CSV)",pd.DataFrame(batch).to_csv(index=False),file_name="hgvs_reference_checks.csv")
             exon_summary=summarize_coding_exons(loaded["annotation"],loaded["cds"],rows,__import__("src.gene_lookup",fromlist=["coding_map"]).coding_map)
             with st.expander("Overview of every coding exon",expanded=True):
                 st.dataframe(pd.DataFrame(exon_summary),use_container_width=True,hide_index=True)
@@ -169,6 +192,12 @@ if mode=="Search gene / transcript / exon / codon":
             alt_index=st.selectbox("Choose one-base mutant codon",list(range(len(variants))),
                 format_func=lambda i: f"{codon_row['reference_codon']} → {variants[i]['mutant_codon']} | {codon_row['reference_amino_acid']}{codon_number}{variants[i]['mutant_amino_acid']}",
                 key=f"lookup_alt_{tx['id']}_{codon_number}")
+            target_alt=st.session_state.pop("lookup_target_mutant_codon",None)
+            if target_alt:
+                idx=next((i for i,v in enumerate(variants) if v["mutant_codon"]==target_alt),None)
+                if idx is not None:
+                    st.session_state[f"lookup_alt_{tx['id']}_{codon_number}"]=idx
+                    st.rerun()
             alternative=variants[alt_index]
             st.success(f"Selected reference-based change: {codon_row['reference_codon']} → {alternative['mutant_codon']} | {codon_row['reference_amino_acid']}{codon_number}{alternative['mutant_amino_acid']}")
             st.caption("For example, ATG → CTG | M1L means methionine at amino acid 1 is predicted to change to leucine. This is a selected hypothetical substitution, not a sample genotype.")
