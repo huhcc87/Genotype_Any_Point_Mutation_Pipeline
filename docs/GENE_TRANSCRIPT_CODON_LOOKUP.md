@@ -31,3 +31,7 @@ Select a protein-coding transcript and an exon, then choose a codon from that tr
 - [Ensembl REST documentation](https://rest.ensembl.org/)
 - Ensembl lookup by symbol/ID, sequence by transcript ID and sequence by human genomic region.
 - Genome assembly: GRCh38.
+
+## Browse all coding exons and codons
+
+After **Load CDS and exon/codon map**, the app now shows an **Overview of every coding exon** with coding-base counts, codon ranges and junction-codon counts. Choose **All coding exons** to display every reference coding codon, or select an individual exon to filter the table. Use **Go directly to coding codon / amino-acid number** to locate any 1-based codon in the entire selected transcript, independent of the exon filter. A codon spanning two exons appears in both filtered exon views but only once in the all-codons table. These are **coding** exons: untranslated exons or noncoding portions of exons are not represented in the codon view.
