@@ -189,15 +189,14 @@ if mode=="Search gene / transcript / exon / codon":
             if chosen_exon is not None and chosen_exon not in codon_row["exon_numbers"]:
                 st.caption("Selected codon is outside this exon filter. Choose All coding exons to display its row.")
             variants=alternative_codons(codon_row["reference_codon"])
-            alt_index=st.selectbox("Choose one-base mutant codon",list(range(len(variants))),
-                format_func=lambda i: f"{codon_row['reference_codon']} → {variants[i]['mutant_codon']} | {codon_row['reference_amino_acid']}{codon_number}{variants[i]['mutant_amino_acid']}",
-                key=f"lookup_alt_{tx['id']}_{codon_number}")
             target_alt=st.session_state.pop("lookup_target_mutant_codon",None)
             if target_alt:
                 idx=next((i for i,v in enumerate(variants) if v["mutant_codon"]==target_alt),None)
                 if idx is not None:
                     st.session_state[f"lookup_alt_{tx['id']}_{codon_number}"]=idx
-                    st.rerun()
+            alt_index=st.selectbox("Choose one-base mutant codon",list(range(len(variants))),
+                format_func=lambda i: f"{codon_row['reference_codon']} → {variants[i]['mutant_codon']} | {codon_row['reference_amino_acid']}{codon_number}{variants[i]['mutant_amino_acid']}",
+                key=f"lookup_alt_{tx['id']}_{codon_number}")
             alternative=variants[alt_index]
             st.success(f"Selected reference-based change: {codon_row['reference_codon']} → {alternative['mutant_codon']} | {codon_row['reference_amino_acid']}{codon_number}{alternative['mutant_amino_acid']}")
             st.caption("For example, ATG → CTG | M1L means methionine at amino acid 1 is predicted to change to leucine. This is a selected hypothetical substitution, not a sample genotype.")
