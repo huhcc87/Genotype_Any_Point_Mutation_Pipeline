@@ -6,6 +6,8 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 from src.assay import analyze_assay
+from src.restriction import find_differential_enzymes
+from src.sequence import apply_mutation
 from src.document_input import extract_sequences
 from src.sequence import load_sequence
 from src.reference_mapping import map_genomic_snv
@@ -320,6 +322,29 @@ if st.button("Analyze example" if mode=="Try example" else "Analyze sequence",
         st.error("Analysis could not complete: "+str(exc))
 
 result=st.session_state.get("result")
+if result and result.get("primers"):
+    primer_options=result["primers"]
+    primer_index=st.selectbox(
+        "Choose primer pair for enzyme screening, virtual gel and reports",
+        list(range(len(primer_options))),
+        format_func=lambda i:f"Pair {i+1} — {primer_options[i]['product_size']} bp | F Tm {primer_options[i]['forward_tm']} °C | R Tm {primer_options[i]['reverse_tm']} °C",
+        key="selected_primer_index"
+    )
+    if st.session_state.get("selected_primer_scope")!=(result["timestamp_utc"],primer_index):
+        st.session_state["selected_primer_scope"]=(result["timestamp_utc"],primer_index)
+        st.session_state["enzyme_index"]=0
+        st.session_state.pop("export",None)
+    candidate=primer_options[primer_index]
+    original=st.session_state["sequence"]
+    wt,mut=apply_mutation(original,result["position"]-1,result["ref"],result["alt"])
+    left,right=candidate["forward_start"],candidate["reverse_start"]
+    result=dict(result)
+    result["selected_primer"]=candidate
+    result["wt_amplicon"]=wt[left:right+1]
+    result["mut_amplicon"]=mut[left:right+1]
+    result["enzymes"]=rank_enzymes(find_differential_enzymes(
+        result["wt_amplicon"],result["mut_amplicon"],max_results=max_enzymes))
+    result["status"]="DESIGN_CANDIDATE" if result["enzymes"] else "NO_DIFFERENTIAL_ENZYME"
 if result:
     st.divider()
     st.subheader(result["name"]+" — "+result["status"])
@@ -405,7 +430,7 @@ if result:
         ix=st.session_state.get("enzyme_index",0)
         selected_enzyme=result["enzymes"][ix] if result["enzymes"] and ix < len(result["enzymes"]) else None
         selected_ladder=st.session_state.get("ladder_name",next(iter(LADDERS)))
-        key=(result["timestamp_utc"],selected_enzyme["enzyme"] if selected_enzyme else "",selected_ladder, str(result.get("variant_input",{})))
+        key=(result["timestamp_utc"],st.session_state.get("selected_primer_index",0),selected_enzyme["enzyme"] if selected_enzyme else "",selected_ladder, str(result.get("variant_input",{})))
         if st.button("Prepare all reports",key="prepare_reports"):
             try:
                 with st.spinner("Creating all downloadable results..."):
