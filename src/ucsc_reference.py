@@ -198,6 +198,8 @@ def search_refseq_gene(gene_symbol, assembly="GRCh38"):
     transcripts.sort(key=lambda tx: (-tx["exon_count"], tx["id"]))
     return {
         "gene_id": name if _ENSG.fullmatch(name) else locus["gene_symbol"],
+        "gene_locus":{"start_1based":locus["start_1based"],"end_1based":locus["end_1based"]},
+        "gene_locus_source":"MyGene.info genomic position (selected assembly)",
         "gene_symbol": locus["gene_symbol"],
         "assembly":assembly,"chromosome":locus["chromosome"],
         "transcripts":transcripts,
