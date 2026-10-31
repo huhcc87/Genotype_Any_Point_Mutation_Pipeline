@@ -12,6 +12,7 @@ from src.reference_mapping import map_genomic_snv
 from src.variant_input import parse_marked_reference, compare_wild_type_mutant
 from src.gene_lookup import search_gene, get_transcript_details, get_cds, codon_table, alternative_codons, fetch_genomic_assay
 from src.ucsc_reference import search_refseq_gene, get_refseq_cds, fetch_refseq_assay
+from src.exon_browser import summarize_coding_exons, filter_codon_rows, lookup_codon
 from src.ranking import rank_enzymes
 from src.ladders import LADDERS,ladder_notes,recommended_ladders
 from src.visualization import render_ladder_gel,render_sequence_figure,sequence_markup
@@ -113,14 +114,22 @@ if mode=="Search gene / transcript / exon / codon":
         if loaded and loaded["transcript_id"]==tx["id"]:
             rows=loaded["rows"]
             st.caption(f"Validated CDS: {len(loaded['cds'])} bases, {len(rows)} codons. Exon numbering follows the selected transcript.")
-            exons=sorted({ex for row in rows for ex in row["exon_numbers"]})
-            exon_num=st.selectbox("Select coding exon",exons)
-            exon_rows=[r for r in rows if exon_num in r["exon_numbers"]]
-            st.dataframe(pd.DataFrame(exon_rows)[["codon_number","reference_codon","reference_amino_acid","exon_numbers","cds_positions_1based","genomic_positions","splice_junction_codon"]],
-                         use_container_width=True,hide_index=True)
-            codon_number=st.selectbox("Choose coding codon / amino-acid number",
-                                      [r["codon_number"] for r in exon_rows],key="lookup_codon")
-            codon_row=next(r for r in exon_rows if r["codon_number"]==codon_number)
+            exon_summary=summarize_coding_exons(loaded["annotation"],loaded["cds"],rows,__import__("src.gene_lookup",fromlist=["coding_map"]).coding_map)
+            with st.expander("Overview of every coding exon",expanded=True):
+                st.dataframe(pd.DataFrame(exon_summary),use_container_width=True,hide_index=True)
+                st.caption("A codon can cross an exon boundary. Its codon number is unchanged across the whole transcript.")
+            exon_options=["All coding exons"]+[str(entry["exon_number"]) for entry in exon_summary]
+            exon_choice=st.selectbox("Show codons from",exon_options,key="lookup_exon_filter")
+            chosen_exon=None if exon_choice=="All coding exons" else int(exon_choice)
+            exon_rows=filter_codon_rows(rows,chosen_exon)
+            st.caption(f"Showing {len(exon_rows):,} of {len(rows):,} coding codons. A junction codon may appear in two individual exon views.")
+            st.dataframe(pd.DataFrame(exon_rows)[["codon_number","reference_codon","reference_amino_acid","exon_numbers","cds_positions_1based","genomic_positions","splice_junction_codon"]],use_container_width=True,hide_index=True,height=380)
+            codon_number=int(st.number_input("Go directly to coding codon / amino-acid number (1-based across transcript)",
+                min_value=1,max_value=len(rows),value=1,step=1,key="lookup_codon_number"))
+            codon_row=lookup_codon(rows,codon_number)
+            st.info(f"Codon {codon_number}: {codon_row['reference_codon']} ({codon_row['reference_amino_acid']}); coding exon(s) {', '.join(map(str,codon_row['exon_numbers']))}." )
+            if chosen_exon is not None and chosen_exon not in codon_row["exon_numbers"]:
+                st.caption("The chosen codon is outside the table's exon filter; select All coding exons to view its row.")
             variants=alternative_codons(codon_row["reference_codon"])
             alt_index=st.selectbox("Choose one-base mutant codon",list(range(len(variants))),
                 format_func=lambda i: f"{codon_row['reference_codon']} → {variants[i]['mutant_codon']} | {codon_row['reference_amino_acid']}{codon_number}{variants[i]['mutant_amino_acid']}",
