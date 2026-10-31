@@ -144,7 +144,7 @@ def curated_public_reference(variant):
             "protein_hgvs":"NP_055400.1:p.Gln248His",
             "protein_short":"Q248H",
             "rsid":"rs11568350",
-            "clinvar_reference":"https://www.ncbi.nlm.nih.gov/clinvar/RCV000467098.17/",
+            "clinvar_reference":"https://www.ncbi.nlm.nih.gov/clinvar/variation/333167/",
             "dbsnp_reference":"https://www.ncbi.nlm.nih.gov/snp/rs11568350",
             "rflp_literature":"https://patents.google.com/patent/US7718785B2/en",
             "rflp_note":"PvuII reported in a published assay description; laboratory specificity and performance for your primers are not validated.",
