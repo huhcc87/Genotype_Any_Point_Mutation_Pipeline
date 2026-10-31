@@ -13,6 +13,7 @@ from src.variant_input import parse_marked_reference, compare_wild_type_mutant
 from src.gene_lookup import search_gene, get_transcript_details, get_cds, codon_table, alternative_codons, fetch_genomic_assay
 from src.ucsc_reference import search_refseq_gene, get_refseq_cds, fetch_refseq_assay
 from src.exon_browser import summarize_coding_exons, filter_codon_rows, lookup_codon
+from src.gene_structure import gene_locus_summary, transcript_structure
 from src.ranking import rank_enzymes
 from src.ladders import LADDERS,ladder_notes,recommended_ladders
 from src.visualization import render_ladder_gel,render_sequence_figure,sequence_markup
@@ -95,6 +96,10 @@ if mode=="Search gene / transcript / exon / codon":
         st.caption("Gene discovery source: "+found.get("reference_provider","Unknown"))
         if found.get("lookup_warning"):
             st.warning(found["lookup_warning"])
+        st.markdown("#### Gene-level location")
+        gene_info=gene_locus_summary(found)
+        st.dataframe(pd.DataFrame([gene_info]),use_container_width=True,hide_index=True)
+        st.caption("Gene span describes the annotated gene locus, not the length of every transcript. Cytoband is shown only if supplied by a verified source.")
         txs=found["transcripts"]
         tx_index=st.selectbox("Choose protein-coding transcript",list(range(len(txs))),
             format_func=lambda i: f"{txs[i]['id']}.{txs[i]['version'] or '?'} | {txs[i]['label']} | exon/codon details on selection" + (" | canonical" if txs[i]["is_canonical"] else ""),
@@ -113,6 +118,22 @@ if mode=="Search gene / transcript / exon / codon":
         loaded=st.session_state.get("lookup_cds")
         if loaded and loaded["transcript_id"]==tx["id"]:
             rows=loaded["rows"]
+            structure=transcript_structure(loaded["annotation"],loaded["cds"],rows)
+            overview=structure["summary"]
+            st.markdown("#### Complete selected-transcript structure")
+            st.dataframe(pd.DataFrame([overview]),use_container_width=True,hide_index=True)
+            st.caption("All exons include UTRs; coding exons are a separate subset. Coordinates are 1-based inclusive.")
+            with st.expander("All exons, introns and splice-junction coordinates",expanded=False):
+                st.markdown("**All transcript exons (including untranslated regions)**")
+                st.dataframe(pd.DataFrame(structure["exons"]),use_container_width=True,hide_index=True)
+                st.markdown("**All transcript introns**")
+                st.dataframe(pd.DataFrame(structure["introns"]),use_container_width=True,hide_index=True)
+                st.markdown("**Splice donor and acceptor boundaries**")
+                st.dataframe(pd.DataFrame(structure["junctions"]),use_container_width=True,hide_index=True)
+                st.caption("Donor/acceptor positions are predicted from exon structure; splice motifs have not been sequence-verified.")
+            st.download_button("Download gene and transcript structure (JSON)",
+                __import__("json").dumps({"gene":gene_info,"structure":structure},indent=2),
+                file_name="gene_structure_annotation.json",mime="application/json")
             st.caption(f"Validated CDS: {len(loaded['cds'])} bases, {len(rows)} codons. Exon numbering follows the selected transcript.")
             exon_summary=summarize_coding_exons(loaded["annotation"],loaded["cds"],rows,__import__("src.gene_lookup",fromlist=["coding_map"]).coding_map)
             with st.expander("Overview of every coding exon",expanded=True):
