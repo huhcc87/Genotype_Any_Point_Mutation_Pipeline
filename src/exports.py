@@ -37,6 +37,9 @@ def _summary_rows(result, enzyme, ladder_name):
         ("Score (heuristic)",str(enzyme.get("priority_score","—")) if enzyme else "—"),
         ("Selected ladder",ladder_name),
     ]
+    meta=result.get("variant_input") or {}
+    if meta.get("reference_codon"):
+        rows += [("Transcript",meta.get("transcript_id","")),("Genome assembly",meta.get("assembly","")),("Genomic position",str(meta.get("genomic_chromosome",""))+":"+str(meta.get("genomic_position",""))),("Coding codon",str(meta.get("codon_number",""))),("WT to mutant codon",str(meta["reference_codon"])+" → "+str(meta["alternate_codon"])),("Predicted amino acid change",str(meta.get("reference_aa",""))+str(meta.get("codon_number",""))+str(meta.get("alternate_aa","")))]
     if pair:
         rows += [
             ("Forward (5' to 3')",pair["forward"]),
