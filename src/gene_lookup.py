@@ -234,6 +234,8 @@ def search_gene(identifier, assembly="GRCh38"):
         return {
             "gene_id":gene_id,"gene_symbol":gene.get("display_name",name),
             "assembly":assembly,"chromosome":gene.get("seq_region_name"),
+            "gene_locus":{"start_1based":int(gene["start"]),"end_1based":int(gene["end"])} if gene.get("start") and gene.get("end") else None,
+            "gene_locus_source":"Ensembl gene lookup",
             "transcripts":transcripts,"reference_provider":"Ensembl REST",
             "reference_url":HOSTS[assembly]+endpoint,"query":name,
             "lookup_status":"ENSEMBL_GENE_ANNOTATION",
