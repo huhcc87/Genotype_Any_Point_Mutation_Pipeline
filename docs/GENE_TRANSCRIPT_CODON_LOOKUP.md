@@ -46,3 +46,11 @@ After selecting a transcript and loading its coding sequence, the application no
 Open **All exons, introns and splice-junction coordinates** to view every exon including UTR regions, every intervening intron, and each theoretical splice donor/acceptor intronic boundary (1-based genomic coordinates). Exon numbers progress in transcript 5′→3′ order, even on a negative-strand gene. Junctions are derived from the exon model; GT/AG motifs have **not** been sequence-verified. Click **Download gene and transcript structure (JSON)** for the complete result.
 
 **Note:** The number of exons in the coding view can differ from the total transcript exon count. In different isoforms, the number and length of exons/introns can change. Predicted coding triplets can include a stop codon that does not encode an amino acid. All values are specific to the selected reference assembly and annotated transcript.
+
+## Interactive codon selection and external variant records
+
+Click a **row** in the codon table (single-row selection) or change the **Select coding codon / amino-acid number** box. The selected codon controls the nine possible single-nucleotide mutant codons and the reference DNA/assay design. The amino-acid change shown (e.g., `ATG → CTG | M1L`) is a theoretical sequence substitution, NOT a measured sample genotype.
+
+Click **Check selected variant in ClinVar and dbSNP**. This sends only the public single-base genome position and strand-normalized allele (not sample sequences) to NCBI. The report provides an assembly-specific genomic HGVS string, SPDI representation, any allele-associated rsIDs returned by Variation Services, and candidate ClinVar records from E-utilities. Verify each ClinVar candidate's allele, genome assembly, transcript and interpretation before claiming exact matching or clinical significance. This is a *candidate record* search, not ClinVar pathogenicity interpretation. Database response failures are explicit and do not prevent local assay design.
+
+The tool **never assigns novel status automatically** from an empty database search. Novelty requires validated exact-allele comparison across databases and publications, potentially population data, and an assessment of coverage/version. `NOT_FOUND_IN_QUERY` is not evidence of novelty. All outputs remain research-only.
