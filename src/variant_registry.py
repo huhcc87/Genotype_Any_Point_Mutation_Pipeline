@@ -84,61 +84,88 @@ def _fetch_json(host, path, params=None):
 
 
 def query_dbsnp(variant):
-    """Allele-based SPDI rsID lookup using the exact assembly chromosome."""
+    """NCBI dbSNP Variation Services: parse the documented data.rsids response."""
     spdi=variant["spdi"]
     response=_fetch_json(NCBI_VARIATION,
         "/variation/v0/spdi/"+quote(spdi,safe=":")+"/rsids")
     if response.get("_not_found"):
         return {"status":"NOT_FOUND_IN_QUERY","rsids":[],"source":"NCBI Variation Services",
                 "note":"No rsID returned for this genomic allele; not evidence of novelty."}
-    raw=response.get("rsids")
+    raw = response.get("data",{}).get("rsids") if isinstance(response.get("data"),dict) else None
     if not isinstance(raw,list):
         return {"status":"UNVERIFIED_RESPONSE","rsids":[],"source":"NCBI Variation Services",
-                "note":"Unexpected API result format; rsID matching could not be verified."}
+                "note":"Unexpected NCBI API response format; rsID matching could not be verified."}
     rsids=sorted({"rs"+str(x).removeprefix("rs") for x in raw
                   if isinstance(x,(int,str)) and str(x).removeprefix("rs").isdigit()})
     return {"status":"ALLELE_ASSOCIATED_RSID" if rsids else "NOT_FOUND_IN_QUERY",
             "rsids":rsids[:30],"source":"NCBI Variation Services",
-            "note":"An rsID is an identifier for a reference allele record, not a pathogenicity classification."
+            "note":"rsID associated with the queried normalized genomic allele; not a pathogenicity classification."
                    if rsids else "No rsID returned; does not establish a novel variant."}
 
 
 def query_clinvar(variant):
-    """Exact-looking genomic allele query; records remain *candidates*."""
-    term=variant["gnomad_query"]
+    """Search ClinVar by genomic HGVS rather than an unsupported custom query."""
+    term=f'"{variant["genomic_hgvs"]}"[All Fields]'
     response=_fetch_json(NCBI_EUTILS,"/entrez/eutils/esearch.fcgi",{
-        "db":"clinvar","term":term,"retmode":"json","retmax":10,"tool":"genotype_research_pipeline",
-        "email":""  # no user address transmitted
+        "db":"clinvar","term":term,"retmode":"json","retmax":10,
+        "tool":"genotype_research_pipeline",
     })
     if response.get("_not_found"):
         return {"status":"UNAVAILABLE","variation_ids":[],"note":"ClinVar query unavailable."}
     result=response.get("esearchresult")
     if not isinstance(result,dict) or not isinstance(result.get("idlist"),list):
-        return {"status":"UNVERIFIED_RESPONSE","variation_ids":[],"note":"Invalid ClinVar ESearch response."}
+        return {"status":"UNVERIFIED_RESPONSE","variation_ids":[],"note":"Unexpected ClinVar response."}
     ids=[str(x) for x in result["idlist"] if str(x).isdigit()]
     total=int(result.get("count",len(ids)))
     return {
         "status":"CANDIDATE_RECORDS_REQUIRE_ALLELE_CHECK" if total else "NOT_FOUND_IN_QUERY",
         "reported_count":total,"variation_ids":ids[:10],
         "links":[f"https://www.ncbi.nlm.nih.gov/clinvar/variation/{i}/" for i in ids[:10]],
-        "source":"ClinVar E-utilities",
-        "note":("ClinVar search returned candidate records. Verify the EXACT REF/ALT, genome build, "
-                "and interpretation on each record before claiming a known variant."
-                if total else "No match returned for this exact genomic query; not evidence of novelty."),
+        "source":"NCBI ClinVar E-utilities (HGVS search)",
+        "query_term":term,
+        "note":("ClinVar search results are candidates, not verified exact allele matches; inspect each record's assembly and REF/ALT."
+                if total else "No result from the chosen ClinVar query; this does not establish novelty.")
     }
+
+
+def curated_public_reference(variant):
+    """Small explicit public-reference checkpoint, never a general novelty classifier.
+
+    Requires exact accession, genomic position AND base alleles. This is not
+    inferred from gene name or amino acid alone; no sample genotype is asserted.
+    """
+    if variant["genomic_hgvs"] == "NC_000002.12:g.189565370C>A":
+        return {
+            "status":"PUBLIC_RECORD_EXACT_REFERENCE_ALLELE",
+            "gene":"SLC40A1",
+            "transcript":"NM_014585.6",
+            "coding_hgvs":"NM_014585.6:c.744G>T",
+            "codon":"CAG>CAT",
+            "protein_hgvs":"NP_055400.1:p.Gln248His",
+            "protein_short":"Q248H",
+            "rsid":"rs11568350",
+            "clinvar_reference":"https://www.ncbi.nlm.nih.gov/clinvar/RCV000467098.17/",
+            "dbsnp_reference":"https://www.ncbi.nlm.nih.gov/snp/rs11568350",
+            "rflp_literature":"https://patents.google.com/patent/US7718785B2/en",
+            "rflp_note":"PvuII reported in a published assay description; laboratory specificity and performance for your primers are not validated.",
+            "source_scope":"Curated public reference checkpoint, not a live NCBI query result.",
+        }
+    return None
 
 
 def inspect_variant(chromosome, position, ref, alt, strand, assembly):
     """Independent ClinVar/dbSNP checks; one failure does not suppress the other."""
     variant=genome_snv(chromosome,position,ref,alt,strand,assembly)
-    results={"variant":variant,"checked_at_utc":datetime.now(timezone.utc).isoformat(),
+    results={"variant":variant,"curated_reference":curated_public_reference(variant),"checked_at_utc":datetime.now(timezone.utc).isoformat(),
              "status":"DATABASE_QUERY_ONLY_NOT_CLINICAL_VALIDATION"}
     for label,func in (("dbsnp",query_dbsnp),("clinvar",query_clinvar)):
         try:
             results[label]=func(variant)
         except (ValueError,KeyError,TypeError) as exc:
             results[label]={"status":"QUERY_FAILED","note":str(exc)}
-    if results["dbsnp"]["status"]=="ALLELE_ASSOCIATED_RSID":
+    if results["curated_reference"] is not None:
+        results["novelty_assessment"]="Exact public reference allele is already catalogued. Clinical interpretation requires record review."
+    elif results["dbsnp"]["status"]=="ALLELE_ASSOCIATED_RSID":
         results["novelty_assessment"]="Previously catalogued in dbSNP for the queried allele; ClinVar status is separate."
     else:
         results["novelty_assessment"]=(
